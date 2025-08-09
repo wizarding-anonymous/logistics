@@ -19,6 +19,23 @@ class Transaction(BaseModel):
         orm_mode = True
 
 # =================================
+# Payout Schemas
+# =================================
+
+class Payout(BaseModel):
+    id: uuid.UUID
+    supplier_organization_id: uuid.UUID
+    order_id: uuid.UUID
+    amount: float
+    currency: str
+    status: str
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
+
+# =================================
 # Invoice Schemas
 # =================================
 

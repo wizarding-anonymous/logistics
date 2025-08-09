@@ -56,3 +56,18 @@ async def get_service_endpoint(
     if db_service is None:
         raise HTTPException(status_code=404, detail="Service offering not found")
     return db_service
+
+@router.put("/services/{service_id}", response_model=schemas.ServiceOffering)
+async def update_service_offering_endpoint(
+    service_id: uuid.UUID,
+    service_in: schemas.ServiceOfferingUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    # TODO: Add authz check to ensure user is the owner of the service offering
+    updated_service = await service.update_service_offering(
+        db=db, service_id=service_id, service_in=service_in
+    )
+    if updated_service is None:
+        raise HTTPException(status_code=404, detail="Service offering not found")
+    return updated_service

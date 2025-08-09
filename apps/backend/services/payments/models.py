@@ -32,11 +32,28 @@ class Invoice(Base):
 
     transactions = relationship("Transaction", back_populates="invoice")
 
+class PayoutStatus(str, enum.Enum):
+    PENDING = "pending"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+class Payout(Base):
+    __tablename__ = "payouts"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    supplier_organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    order_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    amount = Column(Numeric(10, 2), nullable=False)
+    currency = Column(String(3), nullable=False)
+    status = Column(SAEnum(PayoutStatus), nullable=False, default=PayoutStatus.PENDING)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+
 class Transaction(Base):
     __tablename__ = "transactions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    invoice_id = Column(UUID(as_uuid=True), ForeignKey("invoices.id"), nullable=False)
+    invoice_id = Column(UUID(as_uuid=True), ForeignKey("invoices.id"), nullable=True) # Can be null for direct payouts
+    payout_id = Column(UUID(as_uuid=True), ForeignKey("payouts.id"), nullable=True)
 
     transaction_type = Column(SAEnum(TransactionType), nullable=False)
     amount = Column(Numeric(10, 2), nullable=False)

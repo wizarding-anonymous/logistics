@@ -1,6 +1,7 @@
 import uuid
-from sqlalchemy import Column, String, DateTime, func, Numeric, Enum as SAEnum
+from sqlalchemy import Column, String, DateTime, func, Numeric, Enum as SAEnum, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 from .database import Base
 import enum
 
@@ -30,5 +31,30 @@ class Order(Base):
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
+    segments = relationship("ShipmentSegment", back_populates="order")
+    status_history = relationship("StatusHistory", back_populates="order")
+
     def __repr__(self):
         return f"<Order(id={self.id}, status='{self.status}')>"
+
+class ShipmentSegment(Base):
+    __tablename__ = "order_shipment_segments"
+    id = Column(Integer, primary_key=True) # Simple integer PK for this table
+    order_id = Column(UUID(as_uuid=True), ForeignKey("orders.id"), nullable=False)
+
+    origin_address = Column(String, nullable=False)
+    destination_address = Column(String, nullable=False)
+    transport_type = Column(String, nullable=True)
+
+    order = relationship("Order", back_populates="segments")
+
+class StatusHistory(Base):
+    __tablename__ = "order_status_history"
+    id = Column(Integer, primary_key=True)
+    order_id = Column(UUID(as_uuid=True), ForeignKey("orders.id"), nullable=False)
+
+    status = Column(SAEnum(OrderStatus), nullable=False)
+    notes = Column(String, nullable=True)
+    timestamp = Column(DateTime, server_default=func.now(), nullable=False)
+
+    order = relationship("Order", back_populates="status_history")

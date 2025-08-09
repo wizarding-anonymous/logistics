@@ -48,3 +48,27 @@ async def get_invoice_for_order(
     # that owns the invoice.
 
     return invoice
+
+@router.get("/invoices/by-organization/{org_id}", response_model=list[schemas.Invoice])
+async def list_invoices_for_organization(
+    org_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """
+    List all invoices for a given organization.
+    """
+    # TODO: Add authz check
+    return await service.get_invoices_by_organization(db, org_id=org_id)
+
+@router.get("/payouts/by-organization/{org_id}", response_model=list[schemas.Payout])
+async def list_payouts_for_organization(
+    org_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """
+    List all payouts for a given supplier organization.
+    """
+    # TODO: Add authz check
+    return await service.get_payouts_by_organization(db, org_id=org_id)

@@ -1,0 +1,88 @@
+# Default values for marketplace.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# This is a master list of all services to be deployed by this chart.
+# For each service listed here, a corresponding template file must exist
+# in the templates/ directory (e.g., templates/auth-service.yaml).
+services:
+  - auth-service
+  - orgs-service
+  - catalog-service
+  - rfq-service
+  - orders-service
+  - tracking-service
+  - docs-service
+  # - payments-service # Not yet implemented
+  # - chat-service # Not yet implemented
+
+# Default configuration for all services. Can be overridden per-service.
+defaultServiceConfig:
+  replicaCount: 1
+  image:
+    pullPolicy: IfNotPresent
+    # repository and tag will be set per-service
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+  env:
+    DATABASE_URL: "postgresql+asyncpg://admin:password@postgres/marketplace"
+    KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+    # Other common env vars can go here
+
+# Per-service configuration overrides
+# The key must match an entry in the 'services' list above.
+auth-service:
+  image:
+    repository: your-repo/auth-service
+    tag: latest
+  env:
+    JWT_SECRET_KEY: "a_super_secret_key_for_k8s"
+    RECAPTCHA_SECRET_KEY: "your_recaptcha_secret_from_google"
+
+orgs-service:
+  image:
+    repository: your-repo/orgs-service
+    tag: latest
+
+catalog-service:
+  image:
+    repository: your-repo/catalog-service
+    tag: latest
+
+rfq-service:
+  image:
+    repository: your-repo/rfq-service
+    tag: latest
+
+orders-service:
+  image:
+    repository: your-repo/orders-service
+    tag: latest
+
+tracking-service:
+  image:
+    repository: your-repo/tracking-service
+    tag: latest
+
+docs-service:
+  image:
+    repository: your-repo/docs-service
+    tag: latest
+  env:
+    S3_ENDPOINT_URL: "http://minio:9000"
+    S3_ACCESS_KEY: "minioadmin"
+    S3_SECRET_KEY: "minioadmin"
+    S3_BUCKET_NAME: "documents"

@@ -17,6 +17,7 @@ class Organization(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
+    subscription_plan_id = Column(String, nullable=True) # Links to a plan in a billing service
 
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -27,6 +28,24 @@ class Organization(Base):
 
     def __repr__(self):
         return f"<Organization(id={self.id}, name='{self.name}')>"
+
+
+# Association Table for the many-to-many relationship between Users and Teams
+user_team_link = Table('user_team_link', Base.metadata,
+    Column('user_id', UUID(as_uuid=True), primary_key=True),
+    Column('team_id', UUID(as_uuid=True), ForeignKey('teams.id'), primary_key=True)
+)
+
+class Team(Base):
+    __tablename__ = "teams"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+
+    organization = relationship("Organization")
+    # members = relationship("User", secondary=user_team_link) # Conceptual
 
 import enum
 

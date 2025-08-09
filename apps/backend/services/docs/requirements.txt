@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+sqlalchemy[asyncio]
+asyncpg
+pydantic
+pydantic-settings
+python-dotenv
+boto3 # For S3/MinIO
+PyMuPDF # For PDF generation

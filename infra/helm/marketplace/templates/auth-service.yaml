@@ -1,0 +1,13 @@
+{{- $serviceName := "auth-service" }}
+{{- $serviceValues := .Values | get $serviceName (dict) }}
+{{- $mergedValues := merge $serviceValues .Values.defaultServiceConfig }}
+{{- with $mergedValues }}
+---
+{{- include "common.deployment" (dict "Chart" (dict "Name" $serviceName "AppVersion" $.Chart.AppVersion) "Values" . "Release" $.Release) }}
+---
+{{- include "common.service" (dict "Chart" (dict "Name" $serviceName) "Values" . "Release" $.Release) }}
+---
+{{- include "common.configmap" (dict "Chart" (dict "Name" $serviceName) "Values" . "Release" $.Release) }}
+---
+{{- include "common.hpa" (dict "Chart" (dict "Name" $serviceName) "Values" . "Release" $.Release) }}
+{{- end }}

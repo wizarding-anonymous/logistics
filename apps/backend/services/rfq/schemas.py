@@ -27,17 +27,53 @@ class Offer(OfferBase):
         orm_mode = True
 
 # =================================
+# Cargo & Segment Schemas
+# =================================
+
+class CargoBase(BaseModel):
+    description: str
+    weight_kg: Optional[float] = None
+    volume_cbm: Optional[float] = None
+    pallet_count: Optional[int] = None
+    value: Optional[float] = None
+    value_currency: Optional[str] = None
+    hazard_class: Optional[str] = None
+    temperature_control: Optional[str] = None
+
+class CargoCreate(CargoBase):
+    pass
+
+class Cargo(CargoBase):
+    id: uuid.UUID
+    class Config:
+        orm_mode = True
+
+class ShipmentSegmentBase(BaseModel):
+    origin_address: str
+    destination_address: str
+
+class ShipmentSegmentCreate(ShipmentSegmentBase):
+    pass
+
+class ShipmentSegment(ShipmentSegmentBase):
+    id: uuid.UUID
+    sequence: int
+    class Config:
+        orm_mode = True
+
+# =================================
 # RFQ Schemas
 # =================================
 
 class RFQBase(BaseModel):
-    origin_address: str
-    destination_address: str
-    cargo_description: str
-    cargo_weight_kg: Optional[float] = None
+    # Tender-specific fields
+    incoterms: Optional[str] = None
+    deadline: Optional[datetime] = None
+    tender_type: str = 'open'
 
 class RFQCreate(RFQBase):
-    pass
+    cargo: CargoCreate
+    segments: List[ShipmentSegmentCreate]
 
 class RFQ(RFQBase):
     id: uuid.UUID
@@ -46,6 +82,8 @@ class RFQ(RFQBase):
     status: RFQStatus
     created_at: datetime
     offers: List[Offer] = []
+    cargo: Cargo
+    segments: List[ShipmentSegment]
 
     class Config:
         orm_mode = True

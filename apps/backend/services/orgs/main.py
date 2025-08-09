@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from .api.v1 import orgs
+from .api.v1 import orgs, teams
 from .database import Base, engine
 
 async def create_tables():
@@ -17,8 +17,9 @@ async def on_startup():
     # Create the database tables if they don't exist
     await create_tables()
 
-# Include the API router
+# Include the API routers
 app.include_router(orgs.router, prefix="/api/v1/orgs", tags=["Organizations"])
+app.include_router(teams.router, prefix="/api/v1/teams", tags=["Teams"])
 
 @app.get("/health", tags=["Health"])
 async def health_check():

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { loginUser } from '@/services/authService';
+import { loginUser, loginUserWithTFA } from '@/services/authService';
 import { useAuthStore } from '@/state/authStore';
 
 function LoginPage() {
@@ -8,9 +8,11 @@ function LoginPage() {
   const setTokens = useAuthStore((state) => state.setTokens);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [tfaCode, setTfaCode] = useState('');
+  const [isTfaRequired, setIsTfaRequired] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -20,16 +22,59 @@ function LoginPage() {
         accessToken: tokenResponse.access_token,
         refreshToken: tokenResponse.refresh_token,
       });
-      navigate('/dashboard'); // Redirect to a protected route on success
+      navigate('/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to log in.');
+      if (err.message === 'TFA_REQUIRED') {
+        setIsTfaRequired(true);
+      } else {
+        setError(err.response?.data?.detail || 'Failed to log in.');
+      }
     }
   };
+
+  const handleTfaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    try {
+      const tokenResponse = await loginUserWithTFA(email, password, tfaCode);
+      setTokens({
+        accessToken: tokenResponse.access_token,
+        refreshToken: tokenResponse.refresh_token,
+      });
+      navigate('/dashboard');
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to verify TFA code.');
+    }
+  };
+
+  if (isTfaRequired) {
+    return (
+      <div>
+        <h2>Enter Verification Code</h2>
+        <form onSubmit={handleTfaSubmit}>
+          <div>
+            <label htmlFor="tfaCode">6-Digit Code:</label>
+            <input
+              type="text"
+              id="tfaCode"
+              value={tfaCode}
+              onChange={(e) => setTfaCode(e.target.value)}
+              required
+              maxLength={6}
+            />
+          </div>
+          <button type="submit">Verify & Login</button>
+        </form>
+        {error && <p style={{ color: 'red' }}>{error}</p>}
+      </div>
+    );
+  }
 
   return (
     <div>
       <h2>Login</h2>
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleLoginSubmit}>
         <div>
           <label htmlFor="email">Email:</label>
           <input

@@ -16,8 +16,30 @@ class OrganizationCreate(OrganizationBase):
 
 class Organization(OrganizationBase):
     id: uuid.UUID
+    subscription_plan_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+    class Config:
+        orm_mode = True
+
+# =================================
+# Team Schemas
+# =================================
+
+class TeamBase(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    description: Optional[str] = None
+
+class TeamCreate(TeamBase):
+    pass
+
+class TeamUpdate(TeamBase):
+    pass
+
+class Team(TeamBase):
+    id: uuid.UUID
+    organization_id: uuid.UUID
 
     class Config:
         orm_mode = True
@@ -29,6 +51,9 @@ class Organization(OrganizationBase):
 class OrganizationMember(BaseModel):
     user_id: uuid.UUID
     role: str # e.g., 'owner', 'admin', 'member'
+
+class UpdateMemberRole(BaseModel):
+    role: str
 
 class OrganizationWithMembers(Organization):
     members: List[OrganizationMember]

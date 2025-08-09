@@ -7,11 +7,27 @@ from sqlalchemy import update
 from . import models, schemas, kafka_producer
 
 async def create_rfq(db: AsyncSession, rfq_in: schemas.RFQCreate, user_id: uuid.UUID, org_id: uuid.UUID):
+    """
+    Creates a new RFQ with its nested Cargo and ShipmentSegment details.
+    """
+    rfq_data = rfq_in.dict(exclude={'cargo', 'segments'})
     db_rfq = models.RFQ(
-        **rfq_in.dict(),
+        **rfq_data,
         user_id=user_id,
         organization_id=org_id
     )
+
+    # Create and associate the Cargo object
+    cargo_data = rfq_in.cargo.dict()
+    db_cargo = models.Cargo(**cargo_data)
+    db_rfq.cargo = db_cargo
+
+    # Create and associate the ShipmentSegment objects
+    for i, segment_in in enumerate(rfq_in.segments):
+        segment_data = segment_in.dict()
+        db_segment = models.ShipmentSegment(**segment_data, sequence=i + 1)
+        db_rfq.segments.append(db_segment)
+
     db.add(db_rfq)
     await db.commit()
     await db.refresh(db_rfq)
@@ -21,7 +37,11 @@ async def get_rfq_by_id(db: AsyncSession, rfq_id: uuid.UUID):
     result = await db.execute(
         select(models.RFQ)
         .where(models.RFQ.id == rfq_id)
-        .options(selectinload(models.RFQ.offers))
+        .options(
+            selectinload(models.RFQ.offers),
+            selectinload(models.RFQ.cargo),
+            selectinload(models.RFQ.segments)
+        )
     )
     return result.scalars().first()
 
