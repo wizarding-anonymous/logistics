@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from .api.v1 import auth
 from .database import Base, engine
+from .logging_config import setup_logging
 
 async def create_tables():
     async with engine.begin() as conn:
@@ -14,6 +15,8 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def on_startup():
+    # Configure logging
+    setup_logging()
     # Create the database tables if they don't exist
     await create_tables()
 

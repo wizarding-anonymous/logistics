@@ -14,12 +14,10 @@ async def create_service_offering(
     Creates a new Service Offering and its associated Tariffs.
     """
     # Create the main service offering object
+    offering_data = service_in.dict(exclude={"tariffs"})
     db_service = models.ServiceOffering(
-        supplier_organization_id=supplier_org_id,
-        name=service_in.name,
-        description=service_in.description,
-        service_type=service_in.service_type,
-        is_active=service_in.is_active
+        **offering_data,
+        supplier_organization_id=supplier_org_id
     )
 
     # Create the associated tariff objects
@@ -59,3 +57,23 @@ async def get_service_offering_by_id(db: AsyncSession, service_id: uuid.UUID):
         .options(selectinload(models.ServiceOffering.tariffs))
     )
     return result.scalars().first()
+
+async def update_service_offering(
+    db: AsyncSession,
+    service_id: uuid.UUID,
+    service_in: schemas.ServiceOfferingUpdate
+):
+    db_service = await get_service_offering_by_id(db, service_id=service_id)
+    if not db_service:
+        return None
+
+    update_data = service_in.dict(exclude_unset=True, exclude={"tariffs"})
+    for key, value in update_data.items():
+        setattr(db_service, key, value)
+
+    # TODO: Add logic to update/add/remove tariffs
+
+    db.add(db_service)
+    await db.commit()
+    await db.refresh(db_service)
+    return db_service

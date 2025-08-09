@@ -58,16 +58,49 @@ async def process_payment_for_order(db: AsyncSession, order_details: dict):
     await db.commit()
     print(f"Recorded commission of {commission_amount} for invoice {new_invoice.id}")
 
-    # 4. Create the final payout transaction to the supplier
+    # 4. Create a Payout record for the supplier
     payout_amount = total_amount - commission_amount
+    supplier_org_id = uuid.UUID(order_details["supplier_organization_id"])
+
+    new_payout = models.Payout(
+        supplier_organization_id=supplier_org_id,
+        order_id=order_id,
+        amount=payout_amount,
+        currency=currency,
+        status=models.PayoutStatus.COMPLETED # Assuming instant payout for now
+    )
+    db.add(new_payout)
+    await db.commit()
+    await db.refresh(new_payout)
+    print(f"Created Payout {new_payout.id} for supplier {supplier_org_id}")
+
+    # 5. Create the final payout transaction, linked to the Payout record
     payout_transaction = models.Transaction(
         invoice_id=new_invoice.id,
+        payout_id=new_payout.id,
         transaction_type=models.TransactionType.PAYOUT,
         amount=payout_amount,
         notes=f"Payout to supplier for order {order_id}"
     )
     db.add(payout_transaction)
     await db.commit()
-    print(f"Recorded payout of {payout_amount} for invoice {new_invoice.id}")
+    print(f"Recorded payout transaction for Payout {new_payout.id}")
 
     return new_invoice
+
+async def get_invoices_by_organization(db: AsyncSession, org_id: uuid.UUID):
+    result = await db.execute(
+        select(models.Invoice)
+        .where(models.Invoice.organization_id == org_id)
+        .options(selectinload(models.Invoice.transactions))
+        .order_by(models.Invoice.created_at.desc())
+    )
+    return result.scalars().all()
+
+async def get_payouts_by_organization(db: AsyncSession, org_id: uuid.UUID):
+    result = await db.execute(
+        select(models.Payout)
+        .where(models.Payout.supplier_organization_id == org_id)
+        .order_by(models.Payout.created_at.desc())
+    )
+    return result.scalars().all()

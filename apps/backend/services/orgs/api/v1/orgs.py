@@ -82,9 +82,11 @@ async def create_organization_endpoint(
 async def get_organization_endpoint(
     org_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user_context: UserContext = Depends(get_current_user_context),
+    _ = Depends(require_organization_role(["owner", "admin", "member"])),
 ):
-    # TODO: Add authz check
+    """
+    Get details for a specific organization. User must be a member.
+    """
     db_org = await service.get_organization_by_id(db, org_id=org_id)
     if db_org is None:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -120,3 +122,35 @@ async def accept_invitation_endpoint(
             detail="Invalid or expired invitation token.",
         )
     return schemas.OrganizationMember(user_id=user_context.id, role=invitation.role)
+
+@router.patch("/organizations/{org_id}/members/{user_id}", status_code=status.HTTP_200_OK)
+async def update_member_role_endpoint(
+    org_id: uuid.UUID,
+    user_id: uuid.UUID,
+    role_in: schemas.UpdateMemberRole,
+    db: AsyncSession = Depends(get_db),
+    _ = Depends(require_organization_role(["owner", "admin"])),
+):
+    """
+    Update a member's role in an organization. Must be an org admin or owner.
+    """
+    success = await service.update_organization_member_role(db, org_id, user_id, role_in.role)
+    if not success:
+        raise HTTPException(status_code=404, detail="Member not found in organization")
+    return {"message": "Member role updated successfully."}
+
+@router.delete("/organizations/{org_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_member_endpoint(
+    org_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _ = Depends(require_organization_role(["owner", "admin"])),
+):
+    """
+    Remove a member from an organization. Must be an org admin or owner.
+    """
+    # TODO: Add logic to prevent owner from removing themselves if they are the last owner.
+    success = await service.remove_organization_member(db, org_id, user_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Member not found in organization")
+    return
