@@ -1,0 +1,201 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: marketplace_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-marketplace}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: marketplace_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    container_name: marketplace_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    container_name: marketplace_kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
+  elasticsearch:
+    image: elasticsearch:8.8.2
+    container_name: marketplace_elasticsearch
+    environment:
+      - "discovery.type=single-node"
+      - "xpack.security.enabled=false"
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: marketplace_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  orders_service:
+    build:
+      context: ./apps/backend/services/orders
+    container_name: marketplace_orders_service
+    depends_on:
+      - postgres
+      - kafka
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://admin:password@postgres/marketplace
+    ports:
+      - "8001:8000" # Expose on host for direct testing
+    volumes:
+      - ./apps/backend/services/orders:/usr/src/app
+
+  auth_service:
+    build:
+      context: ./apps/backend/services/auth
+    container_name: marketplace_auth_service
+    depends_on:
+      - postgres
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://admin:password@postgres/marketplace
+      - JWT_SECRET_KEY=a_very_secret_key_that_should_be_long_and_random
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./apps/backend/services/auth:/usr/src/app
+
+  orgs_service:
+    build:
+      context: ./apps/backend/services/orgs
+    container_name: marketplace_orgs_service
+    depends_on:
+      - postgres
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://admin:password@postgres/marketplace
+      - JWT_SECRET_KEY=a_very_secret_key_that_should_be_long_and_random
+    ports:
+      - "8003:8000"
+    volumes:
+      - ./apps/backend/services/orgs:/usr/src/app
+
+  rfq_service:
+    build:
+      context: ./apps/backend/services/rfq
+    container_name: marketplace_rfq_service
+    depends_on:
+      - postgres
+      - kafka
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://admin:password@postgres/marketplace
+      - JWT_SECRET_KEY=a_very_secret_key_that_should_be_long_and_random
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    ports:
+      - "8004:8000"
+    volumes:
+      - ./apps/backend/services/rfq:/usr/src/app
+
+  payments_service:
+    build:
+      context: ./apps/backend/services/payments
+    container_name: marketplace_payments_service
+    depends_on:
+      - postgres
+      - kafka
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://admin:password@postgres/marketplace
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    ports:
+      - "8005:8000"
+    volumes:
+      - ./apps/backend/services/payments:/usr/src/app
+
+  catalog_service:
+    build:
+      context: ./apps/backend/services/catalog
+    container_name: marketplace_catalog_service
+    depends_on:
+      - postgres
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://admin:password@postgres/marketplace
+      - JWT_SECRET_KEY=a_very_secret_key_that_should_be_long_and_random
+    ports:
+      - "8006:8000"
+    volumes:
+      - ./apps/backend/services/catalog:/usr/src/app
+
+  frontend_web:
+    build:
+      context: ./apps/frontend/web
+    container_name: marketplace_frontend_web
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./apps/frontend/web:/app
+      - /app/node_modules # Anonymous volume to prevent host node_modules from overwriting container's
+
+  nginx:
+    image: nginx:latest
+    container_name: marketplace_nginx
+    ports:
+      - "8080:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - orders_service
+      - auth_service
+      - orgs_service
+      - rfq_service
+      - payments_service
+      - catalog_service
+
+volumes:
+  postgres_data:
+  redis_data:
+  es_data:
+  minio_data:

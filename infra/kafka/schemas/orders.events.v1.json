@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Order Events",
+  "description": "Schema for events related to the Order lifecycle, version 1. All order-related events should validate against this schema.",
+  "type": "object",
+  "properties": {
+    "eventId": {
+      "description": "Unique identifier for the event.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "description": "The type of event.",
+      "type": "string",
+      "enum": [
+        "OrderCreated",
+        "OrderStatusUpdated",
+        "OrderPodConfirmed"
+      ]
+    },
+    "eventVersion": {
+      "description": "The version of the event schema.",
+      "type": "string",
+      "const": "1.0"
+    },
+    "timestamp": {
+      "description": "ISO 8601 timestamp of when the event occurred.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "sourceService": {
+      "description": "The microservice that generated the event.",
+      "type": "string",
+      "example": "orders-service"
+    },
+    "payload": {
+      "description": "The event-specific payload.",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/OrderCreatedPayload"
+        },
+        {
+          "$ref": "#/definitions/OrderStatusUpdatedPayload"
+        },
+        {
+          "$ref": "#/definitions/OrderPodConfirmedPayload"
+        }
+      ]
+    }
+  },
+  "required": [
+    "eventId",
+    "eventType",
+    "eventVersion",
+    "timestamp",
+    "payload"
+  ],
+  "definitions": {
+    "OrderCreatedPayload": {
+      "type": "object",
+      "description": "Payload for the OrderCreated event.",
+      "properties": {
+        "orderId": { "type": "string", "format": "uuid" },
+        "clientId": { "type": "string", "format": "uuid" },
+        "supplierId": { "type": "string", "format": "uuid" },
+        "totalPrice": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 3 }
+      },
+      "required": ["orderId", "clientId", "supplierId", "totalPrice", "currency"]
+    },
+    "OrderStatusUpdatedPayload": {
+      "type": "object",
+      "description": "Payload for the OrderStatusUpdated event.",
+      "properties": {
+        "orderId": { "type": "string", "format": "uuid" },
+        "previousStatus": { "type": "string" },
+        "newStatus": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["orderId", "previousStatus", "newStatus"]
+    },
+    "OrderPodConfirmedPayload": {
+      "type": "object",
+      "description": "Payload for the OrderPodConfirmed event, signaling the start of the escrow release process.",
+      "properties": {
+        "orderId": { "type": "string", "format": "uuid" },
+        "confirmedBy": { "type": "string", "description": "ID of the user who confirmed delivery." },
+        "podDocumentUrl": { "type": "string", "format": "uri" }
+      },
+      "required": ["orderId", "confirmedBy"]
+    }
+  }
+}

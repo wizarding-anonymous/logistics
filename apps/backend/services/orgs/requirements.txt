@@ -1,0 +1,15 @@
+# Core Framework
+fastapi
+uvicorn[standard]
+
+# Data Validation & Settings
+pydantic
+pydantic-settings
+
+# Database (ORM & Driver)
+sqlalchemy[asyncio]
+asyncpg
+alembic
+
+# Utilities
+python-dotenv

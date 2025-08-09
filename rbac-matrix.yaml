@@ -1,0 +1,132 @@
+# ===================================================================
+# Role-Based Access Control (RBAC) Matrix
+# Single source of truth for permissions in the Logistics Marketplace
+# ===================================================================
+
+# List of all granular permissions available in the system.
+# Format: resource:action[:scope]
+permissions:
+  # RFQ & Offers
+  - id: rfq:create
+    description: "Create a new Request for Quotation (RFQ)."
+  - id: rfq:read:own
+    description: "Read own RFQs and associated offers."
+  - id: rfq:cancel:own
+    description: "Cancel an RFQ before an offer is accepted."
+  - id: offers:create
+    description: "Create an offer for an RFQ."
+  - id: offers:read:own
+    description: "Read own created offers."
+
+  # Orders & Tracking
+  - id: orders:read:own
+    description: "Read own orders (as either client or supplier)."
+  - id: orders:read:all
+    description: "Read all orders on the platform (for support/admin)."
+  - id: orders:update:status
+    description: "Update the status of an order (e.g., in_transit, delivered)."
+  - id: tracking:read:own
+    description: "View detailed tracking information for own orders."
+
+  # Documents & KYC
+  - id: documents:upload:own
+    description: "Upload documents for own orders (e.g., POD, CMR)."
+  - id: documents:read:own
+    description: "Read documents related to own orders."
+  - id: kyc:submit
+    description: "Submit KYC documents for verification."
+  - id: kyc:manage
+    description: "Review, approve, or reject KYC submissions."
+
+  # Disputes
+  - id: disputes:create
+    description: "Create a dispute for an order."
+  - id: disputes:read:own
+    description: "Read and respond to own disputes."
+  - id: disputes:manage
+    description: "Mediate and resolve disputes between users."
+
+  # Finance & Billing
+  - id: finance:read:own
+    description: "View own financial statements, invoices, and payouts."
+  - id: finance:manage:all
+    description: "Manage all financial operations: payouts, commissions, invoices."
+  - id: billing:plans:read
+    description: "View available subscription plans."
+  - id: billing:subscription:manage
+    description: "Manage own organization's subscription plan."
+
+  # Platform Administration
+  - id: admin:users:manage
+    description: "Create, read, update, and delete any user or organization."
+  - id: admin:platform:config
+    description: "Configure platform settings, feature flags, and global tariffs."
+  - id: admin:audit:read
+    description: "View the immutable audit log for all critical operations."
+
+
+# Definition of roles and their assigned permissions.
+roles:
+  - name: guest
+    description: "Unauthenticated user browsing the site."
+    permissions:
+      - billing:plans:read
+
+  - name: client
+    description: "Client/Shipper who creates shipping requests."
+    permissions:
+      - rfq:create
+      - rfq:read:own
+      - rfq:cancel:own
+      - orders:read:own
+      - tracking:read:own
+      - documents:upload:own
+      - documents:read:own
+      - disputes:create
+      - disputes:read:own
+      - finance:read:own
+      - billing:subscription:manage
+
+  - name: supplier
+    description: "Logistics provider (Carrier, Broker, Warehouse)."
+    permissions:
+      - kyc:submit
+      - offers:create
+      - offers:read:own
+      - orders:read:own
+      - orders:update:status
+      - tracking:read:own
+      - documents:upload:own
+      - documents:read:own
+      - disputes:create
+      - disputes:read:own
+      - finance:read:own
+      - billing:subscription:manage
+
+  - name: manager
+    description: "Marketplace Manager for operational support."
+    permissions:
+      - orders:read:all
+      - disputes:manage
+      - kyc:manage
+      # Note: Does not have full user management, can perhaps lock/unlock accounts.
+
+  - name: accountant
+    description: "Accountant for managing finances and reporting."
+    permissions:
+      - finance:manage:all
+      - orders:read:all # To cross-reference financial data
+      - finance:read:own # To see their own company's finances if applicable
+
+  - name: admin
+    description: "System Administrator with full access."
+    permissions:
+      # This role implicitly has all permissions.
+      # For clarity, we can list the most critical ones.
+      - admin:users:manage
+      - admin:platform:config
+      - admin:audit:read
+      - finance:manage:all
+      - disputes:manage
+      - kyc:manage
+      - orders:read:all

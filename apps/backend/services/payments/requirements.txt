@@ -1,0 +1,18 @@
+# Core Framework
+fastapi
+uvicorn[standard]
+
+# Data Validation & Settings
+pydantic
+pydantic-settings
+
+# Database (ORM & Driver)
+sqlalchemy[asyncio]
+asyncpg
+alembic
+
+# Messaging
+kafka-python
+
+# Utilities
+python-dotenv
