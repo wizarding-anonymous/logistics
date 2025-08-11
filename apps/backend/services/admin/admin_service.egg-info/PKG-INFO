@@ -1,0 +1,6 @@
+Metadata-Version: 2.4
+Name: admin_service
+Version: 0.1.0
+Summary: A service for administrative tasks.
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown

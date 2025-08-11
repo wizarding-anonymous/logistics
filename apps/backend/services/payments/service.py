@@ -11,15 +11,15 @@ def _calculate_commission(total_amount: Decimal) -> Decimal:
     """Calculates the marketplace commission."""
     return total_amount * MARKETPLACE_COMMISSION_RATE
 
-async def process_payment_for_order(db: AsyncSession, order_details: dict):
+async def create_invoice_for_order(db: AsyncSession, order_details: dict):
     """
-    This function is triggered by a Kafka event when an order's POD is confirmed.
-    It simulates the entire escrow and payout flow.
+    This function is triggered by an 'order_completed' Kafka event.
+    It creates an invoice and simulates the entire escrow and payout flow.
     """
-    order_id = uuid.UUID(order_details["order_id"])
-    client_org_id = uuid.UUID(order_details["client_organization_id"])
-    total_amount = Decimal(str(order_details["price_amount"]))
-    currency = order_details["price_currency"]
+    order_id = uuid.UUID(order_details["orderId"])
+    client_org_id = uuid.UUID(order_details["clientId"])
+    total_amount = Decimal(str(order_details["totalPrice"]))
+    currency = order_details["currency"]
 
     # 1. Create an Invoice for the client
     new_invoice = models.Invoice(
@@ -104,3 +104,22 @@ async def get_payouts_by_organization(db: AsyncSession, org_id: uuid.UUID):
         .order_by(models.Payout.created_at.desc())
     )
     return result.scalars().all()
+
+async def mark_invoice_as_paid(db: AsyncSession, invoice_id: uuid.UUID, org_id: uuid.UUID):
+    """
+    Marks a given invoice as PAID. Includes an authorization check.
+    """
+    result = await db.execute(select(models.Invoice).where(models.Invoice.id == invoice_id))
+    invoice = result.scalars().first()
+
+    if not invoice:
+        return None # Not found
+
+    # Authz check
+    if invoice.organization_id != org_id:
+        return "unauthorized"
+
+    invoice.status = models.InvoiceStatus.PAID
+    await db.commit()
+    await db.refresh(invoice)
+    return invoice

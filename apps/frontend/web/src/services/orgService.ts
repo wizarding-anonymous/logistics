@@ -65,3 +65,13 @@ export const acceptInvitation = async (token: string) => {
   const response = await orgApiClient.post(`/invitations/${token}/accept`);
   return response.data; // Assuming the backend returns the new membership details
 };
+
+export const removeMember = async (orgId: string, userId: string) => {
+  const response = await orgApiClient.delete(`/organizations/${orgId}/members/${userId}`);
+  return response.data;
+};
+
+export const updateMemberRole = async (orgId: string, userId: string, role: string) => {
+    const response = await orgApiClient.patch(`/organizations/${orgId}/members/${userId}`, { role });
+    return response.data;
+};

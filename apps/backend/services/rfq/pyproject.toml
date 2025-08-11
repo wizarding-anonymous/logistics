@@ -1,0 +1,9 @@
+[project]
+name = "rfq_service"
+version = "0.1.0"
+description = "A service for managing RFQs and offers."
+readme = "README.md"
+requires-python = ">=3.9"
+
+[tool.setuptools.packages.find]
+where = ["."]

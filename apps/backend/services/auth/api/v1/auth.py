@@ -156,6 +156,36 @@ async def read_users_me(current_user: models.User = Depends(get_current_user)):
     return current_user
 
 # =================================
+# KYC Routes
+# =================================
+
+@router.post("/users/me/kyc-documents", response_model=schemas.KYCDocument, status_code=status.HTTP_201_CREATED)
+async def submit_kyc_document(
+    doc_in: schemas.KYCDocumentCreate,
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Submit a KYC document for the current user.
+    NOTE: This endpoint only creates the DB record. The actual file upload
+    to S3/MinIO should be handled separately by the client, which then
+    passes the `file_storage_key` to this endpoint.
+    """
+    # TODO: Add a check to ensure user has the 'supplier' role.
+    return await service.create_kyc_document(db=db, user_id=current_user.id, doc_in=doc_in)
+
+@router.get("/users/me/kyc-documents", response_model=List[schemas.KYCDocument])
+async def list_my_kyc_documents(
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    List all KYC documents for the currently authenticated user.
+    """
+    return await service.get_kyc_documents_by_user(db=db, user_id=current_user.id)
+
+
+# =================================
 # Two-Factor Authentication Routes
 # =================================
 

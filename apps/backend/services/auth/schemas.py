@@ -12,6 +12,13 @@ class UserBase(BaseModel):
     phone_number: Optional[str] = None
     roles: List[str] = ['client']
 
+    @validator('roles')
+    def validate_roles(cls, v):
+        allowed_roles = {'client', 'supplier'}
+        if not set(v).issubset(allowed_roles):
+            raise ValueError(f"Invalid role provided. Allowed roles are: {', '.join(allowed_roles)}")
+        return v
+
     @validator('phone_number')
     def validate_phone_number(cls, v):
         """Validate phone number format (simple E.164-like regex)."""
@@ -44,9 +51,27 @@ class UserCreate(UserBase):
             raise ValueError('Password must contain at least one special character.')
         return v
 
+class KYCDocumentBase(BaseModel):
+    document_type: str
+    file_storage_key: str
+
+class KYCDocumentCreate(KYCDocumentBase):
+    pass
+
+class KYCDocument(KYCDocumentBase):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    status: str # Should match KYCStatus enum
+    rejection_reason: Optional[str] = None
+    uploaded_at: str
+
+    class Config:
+        orm_mode = True
+
 class User(UserBase):
     id: uuid.UUID
     is_active: bool
+    kyc_documents: List[KYCDocument] = []
 
     class Config:
         orm_mode = True

@@ -1,0 +1,10 @@
+[project]
+name = "orgs_service"
+version = "0.1.0"
+description = "A service for managing organizations and teams."
+readme = "README.md"
+requires-python = ">=3.9"
+# Dependencies are managed by requirements.txt for now
+
+[tool.setuptools.packages.find]
+where = ["."]

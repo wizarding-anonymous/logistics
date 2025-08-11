@@ -67,6 +67,28 @@ async def authenticate_user(db: AsyncSession, username: str, password: str):
 
     return user
 
+async def create_kyc_document(db: AsyncSession, user_id: uuid.UUID, doc_in: schemas.KYCDocumentCreate):
+    """
+    Creates a new KYC document record for a user.
+    """
+    # TODO: Add logic to prevent too many pending documents.
+    db_doc = models.KYCDocument(
+        user_id=user_id,
+        document_type=doc_in.document_type,
+        file_storage_key=doc_in.file_storage_key
+    )
+    db.add(db_doc)
+    await db.commit()
+    await db.refresh(db_doc)
+    return db_doc
+
+async def get_kyc_documents_by_user(db: AsyncSession, user_id: uuid.UUID):
+    """
+    Retrieves all KYC documents for a specific user.
+    """
+    result = await db.execute(select(models.KYCDocument).where(models.KYCDocument.user_id == user_id))
+    return result.scalars().all()
+
 async def set_user_tfa_secret(db: AsyncSession, user_id: int, secret: str | None):
     """
     Set the TFA secret for a user.

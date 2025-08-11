@@ -24,33 +24,61 @@ async def get_current_user_id(token: str = Depends(oauth2_scheme)) -> uuid.UUID:
         raise credentials_exception
     return uuid.UUID(user_id_str)
 
+async def get_current_supplier_org_id(token: str = Depends(oauth2_scheme)) -> uuid.UUID:
+    """
+    Dependency to get the supplier's organization ID from the JWT token.
+    This assumes the 'org_id' is a custom claim in the token.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="User is not a supplier or org_id not in token.",
+    )
+    payload = security.decode_token(token)
+    if payload is None:
+        raise credentials_exception
+
+    roles = payload.get("roles", [])
+    if "supplier" not in roles:
+        raise credentials_exception
+
+    org_id_str: str = payload.get("org_id")
+    if org_id_str is None:
+        raise credentials_exception
+    return uuid.UUID(org_id_str)
+
+
 @router.post("/services", response_model=schemas.ServiceOffering, status_code=status.HTTP_201_CREATED)
 async def create_service_offering_endpoint(
     service_in: schemas.ServiceOfferingCreate,
-    # In a real app, supplier_org_id would come from the user's session/token
-    supplier_org_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user_id: uuid.UUID = Depends(get_current_user_id), # Ensures user is logged in
+    supplier_org_id: uuid.UUID = Depends(get_current_supplier_org_id),
 ):
-    # TODO: Add authz check to ensure user is a supplier and belongs to the supplier_org_id
     return await service.create_service_offering(
         db=db, service_in=service_in, supplier_org_id=supplier_org_id
     )
 
+@router.get("/supplier/services", response_model=List[schemas.ServiceOffering])
+async def list_my_services_endpoint(
+    db: AsyncSession = Depends(get_db),
+    supplier_org_id: uuid.UUID = Depends(get_current_supplier_org_id),
+):
+    """Lists all service offerings for the authenticated supplier's organization."""
+    return await service.list_service_offerings_by_supplier(db=db, supplier_org_id=supplier_org_id)
+
+
 @router.get("/services", response_model=List[schemas.ServiceOffering])
-async def list_services_endpoint(
+async def list_public_services_endpoint(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
-    user_id: uuid.UUID = Depends(get_current_user_id), # Ensures user is logged in
 ):
+    """Public endpoint to list all active services."""
     return await service.list_service_offerings(db=db, skip=skip, limit=limit)
 
 @router.get("/services/{service_id}", response_model=schemas.ServiceOffering)
 async def get_service_endpoint(
     service_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user_id: uuid.UUID = Depends(get_current_user_id), # Ensures user is logged in
 ):
     db_service = await service.get_service_offering_by_id(db, service_id=service_id)
     if db_service is None:
@@ -62,12 +90,11 @@ async def update_service_offering_endpoint(
     service_id: uuid.UUID,
     service_in: schemas.ServiceOfferingUpdate,
     db: AsyncSession = Depends(get_db),
-    user_id: uuid.UUID = Depends(get_current_user_id),
+    supplier_org_id: uuid.UUID = Depends(get_current_supplier_org_id),
 ):
-    # TODO: Add authz check to ensure user is the owner of the service offering
     updated_service = await service.update_service_offering(
-        db=db, service_id=service_id, service_in=service_in
+        db=db, service_id=service_id, service_in=service_in, supplier_org_id=supplier_org_id
     )
     if updated_service is None:
-        raise HTTPException(status_code=404, detail="Service offering not found")
+        raise HTTPException(status_code=404, detail="Service offering not found or not authorized")
     return updated_service

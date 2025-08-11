@@ -45,6 +45,36 @@ async def get_rfq_by_id(db: AsyncSession, rfq_id: uuid.UUID):
     )
     return result.scalars().first()
 
+async def get_rfqs_by_org_id(db: AsyncSession, org_id: uuid.UUID):
+    result = await db.execute(
+        select(models.RFQ)
+        .where(models.RFQ.organization_id == org_id)
+        .options(
+            selectinload(models.RFQ.offers),
+            selectinload(models.RFQ.cargo),
+            selectinload(models.RFQ.segments)
+        )
+        .order_by(models.RFQ.created_at.desc())
+    )
+    return result.scalars().all()
+
+async def list_open_rfqs(db: AsyncSession, skip: int = 0, limit: int = 100):
+    """
+    Retrieves a list of all RFQs that are currently in 'open' status.
+    """
+    result = await db.execute(
+        select(models.RFQ)
+        .where(models.RFQ.status == models.RFQStatus.OPEN)
+        .options(
+            selectinload(models.RFQ.cargo),
+            selectinload(models.RFQ.segments)
+        )
+        .order_by(models.RFQ.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    return result.scalars().all()
+
 async def create_offer(db: AsyncSession, offer_in: schemas.OfferCreate, rfq_id: uuid.UUID, supplier_org_id: uuid.UUID):
     rfq = await get_rfq_by_id(db, rfq_id)
     if not rfq or rfq.status != models.RFQStatus.OPEN:

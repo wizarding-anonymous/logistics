@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, DateTime, func, Numeric, Enum as SAEnum, ForeignKey, Integer
+from sqlalchemy import Column, String, DateTime, func, Numeric, Enum as SAEnum, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -33,6 +33,7 @@ class Order(Base):
 
     segments = relationship("ShipmentSegment", back_populates="order")
     status_history = relationship("StatusHistory", back_populates="order")
+    review = relationship("Review", uselist=False, back_populates="order") # One-to-one
 
     def __repr__(self):
         return f"<Order(id={self.id}, status='{self.status}')>"
@@ -58,3 +59,19 @@ class StatusHistory(Base):
     timestamp = Column(DateTime, server_default=func.now(), nullable=False)
 
     order = relationship("Order", back_populates="status_history")
+
+class Review(Base):
+    __tablename__ = "order_reviews"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    order_id = Column(UUID(as_uuid=True), ForeignKey("orders.id"), nullable=False, unique=True) # One review per order
+
+    # The user/org that wrote the review
+    reviewer_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+
+    rating = Column(Integer, nullable=False) # e.g., 1 to 5 stars
+    comment = Column(Text, nullable=True)
+
+    timestamp = Column(DateTime, server_default=func.now(), nullable=False)
+
+    order = relationship("Order")

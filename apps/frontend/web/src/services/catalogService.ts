@@ -13,7 +13,7 @@ const TariffSchema = z.object({
   unit: z.string(),
 });
 
-const ServiceOfferingSchema = z.object({
+export const ServiceOfferingSchema = z.object({
   id: z.string().uuid(),
   supplier_organization_id: z.string().uuid(),
   name: z.string(),
@@ -23,7 +23,23 @@ const ServiceOfferingSchema = z.object({
   tariffs: z.array(TariffSchema),
 });
 
+export const ServiceOfferingListSchema = z.array(ServiceOfferingSchema);
+
 export type ServiceOffering = z.infer<typeof ServiceOfferingSchema>;
+
+export type TariffCreatePayload = {
+    price: number;
+    currency: string;
+    unit: string;
+};
+
+export type ServiceOfferingCreatePayload = {
+    name: string;
+    description?: string;
+    service_type: string;
+    is_active: boolean;
+    tariffs: TariffCreatePayload[];
+};
 
 // =================================
 // API Client Setup
@@ -45,9 +61,18 @@ apiClient.interceptors.request.use((config) => {
 // API Functions
 // =================================
 
-export const listServices = async (): Promise<ServiceOffering[]> => {
+export const listPublicServices = async (): Promise<ServiceOffering[]> => {
   const response = await apiClient.get('/services');
-  return z.array(ServiceOfferingSchema).parse(response.data);
+  return ServiceOfferingListSchema.parse(response.data);
 };
 
-// Add createServiceOffering later
+export const listMyServices = async (): Promise<ServiceOffering[]> => {
+    // This is the authenticated endpoint for suppliers
+    const response = await apiClient.get('/supplier/services');
+    return ServiceOfferingListSchema.parse(response.data);
+}
+
+export const createServiceOffering = async (payload: ServiceOfferingCreatePayload): Promise<ServiceOffering> => {
+    const response = await apiClient.post('/services', payload);
+    return ServiceOfferingSchema.parse(response.data);
+}
