@@ -20,6 +20,8 @@ export function useApproveKycDocument() {
   });
 }
 
+import { listPendingPayouts, approvePayout } from '@/services/adminService';
+
 export function useRejectKycDocument() {
     const queryClient = useQueryClient();
 
@@ -30,3 +32,21 @@ export function useRejectKycDocument() {
       },
     });
   }
+
+export function usePendingPayouts() {
+    return useQuery({
+        queryKey: ['pendingPayouts'],
+        queryFn: listPendingPayouts,
+    });
+}
+
+export function useApprovePayout() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: (payoutId: string) => approvePayout(payoutId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['pendingPayouts'] });
+        },
+    });
+}

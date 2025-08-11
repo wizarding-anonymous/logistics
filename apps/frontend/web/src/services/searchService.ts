@@ -22,7 +22,14 @@ const apiClient = axios.create({
 // API Functions
 // =================================
 
-export const performSearch = async (query: string): Promise<SearchResult[]> => {
-  const response = await apiClient.get('/', { params: { q: query } });
+export interface SearchFilters {
+    status?: string;
+    min_price?: number;
+    max_price?: number;
+}
+
+export const performSearch = async (query: string, filters: SearchFilters): Promise<SearchResult[]> => {
+  const params = { q: query, ...filters };
+  const response = await apiClient.get('/', { params });
   return SearchResultsSchema.parse(response.data);
 };

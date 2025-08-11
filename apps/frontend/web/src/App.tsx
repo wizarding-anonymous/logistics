@@ -21,6 +21,8 @@ import AvailableRfqsPage from './pages/AvailableRfqsPage';
 import KycVerificationPage from './pages/KycVerificationPage';
 import { SearchBar } from './components/Search/SearchBar';
 import SearchPage from './pages/SearchPage';
+import PayoutsPage from './pages/PayoutsPage';
+import PayoutApprovalsPage from './pages/PayoutApprovalsPage';
 
 function Layout() {
   const { isAuthenticated, roles, clearTokens } = useAuthStore();
@@ -51,8 +53,10 @@ function Layout() {
             <>
               {isSupplier && <li><Link to="/available-rfqs">Find Work</Link></li>}
               {isSupplier && <li><Link to="/my-services">My Services</Link></li>}
+              {isSupplier && <li><Link to="/my-payouts">My Payouts</Link></li>}
               {isSupplier && <li><Link to="/kyc">KYC</Link></li>}
               {isAdmin && <li><Link to="/admin/kyc">Admin KYC</Link></li>}
+              {isAdmin && <li><Link to="/admin/payouts">Admin Payouts</Link></li>}
               <li><Link to="/invoices">Invoices</Link></li>
               <li><Link to="/catalog">Public Catalog</Link></li>
               <li><button onClick={clearTokens}>Logout</button></li>
@@ -106,6 +110,10 @@ function App() {
 
             {/* Admin Routes */}
             <Route path="admin/kyc" element={<KycVerificationPage />} />
+            <Route path="admin/payouts" element={<PayoutApprovalsPage />} />
+
+            {/* Supplier Routes */}
+            <Route path="my-payouts" element={<PayoutsPage />} />
 
             <Route path="invitations/:token" element={<AcceptInvitationPage />} />
             <Route path="catalog" element={<ServiceCatalogPage />} />

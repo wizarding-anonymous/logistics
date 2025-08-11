@@ -55,3 +55,28 @@ export const getInvoiceById = async (invoiceId: string): Promise<Invoice> => {
     const response = await apiClient.get(`/invoices/${invoiceId}`);
     return InvoiceSchema.parse(response.data);
 }
+
+// Payout-related functions
+const PayoutSchema = z.object({
+    id: z.string().uuid(),
+    supplier_organization_id: z.string().uuid(),
+    order_id: z.string().uuid(),
+    amount: z.number(),
+    currency: z.string(),
+    status: z.string(),
+    created_at: z.string().datetime(),
+    completed_at: z.string().datetime().nullable(),
+});
+export type Payout = z.infer<typeof PayoutSchema>;
+const PayoutListSchema = z.array(PayoutSchema);
+
+export const listMyPayouts = async (): Promise<Payout[]> => {
+    const response = await apiClient.get('/payouts');
+    return PayoutListSchema.parse(response.data);
+};
+
+// This would be an admin-only function
+export const approvePayout = async (payoutId: string): Promise<Payout> => {
+    const response = await apiClient.post(`/payouts/${payoutId}/approve`);
+    return PayoutSchema.parse(response.data);
+};

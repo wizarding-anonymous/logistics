@@ -13,19 +13,50 @@ def index_document(index_name: str, document_id: str, document_body: dict):
     es.index(index=index_name, id=document_id, body=document_body)
     print(f"Indexed document {document_id} into index {index_name}")
 
-def search_documents(query: str):
+from typing import Optional
+
+def search_documents(
+    query: str,
+    status: Optional[str] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None
+):
     """
-    Performs a multi-index search across all relevant indices.
+    Performs a multi-index search with optional filters.
     """
     es = get_es_client()
 
-    # A simple multi-match query across common fields
-    search_body = {
-        "query": {
+    must_clauses = []
+    should_clauses = []
+
+    # Full-text search part
+    if query:
+        should_clauses.append({
             "multi_match": {
                 "query": query,
-                "fields": ["*description", "*address", "*notes", "id"],
+                "fields": ["*"],
                 "fuzziness": "AUTO"
+            }
+        })
+
+    # Filter part
+    if status:
+        must_clauses.append({"term": {"status.keyword": status}})
+
+    price_range = {}
+    if min_price is not None:
+        price_range["gte"] = min_price
+    if max_price is not None:
+        price_range["lte"] = max_price
+    if price_range:
+        must_clauses.append({"range": {"price": price_range}})
+
+    search_body = {
+        "query": {
+            "bool": {
+                "must": must_clauses,
+                "should": should_clauses,
+                "minimum_should_match": 1 if query else 0
             }
         }
     }

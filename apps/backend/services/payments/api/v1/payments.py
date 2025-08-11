@@ -22,6 +22,17 @@ async def list_my_invoices(
     org_id = user_context["org_id"]
     return await service.get_invoices_by_organization(db, org_id=org_id)
 
+@router.get("/payouts", response_model=list[schemas.Payout])
+async def list_my_payouts(
+    db: AsyncSession = Depends(get_db),
+    user_context: dict = Depends(security.get_current_user_context),
+):
+    """
+    List all payouts for the user's organization (for suppliers).
+    """
+    org_id = user_context["org_id"]
+    return await service.get_payouts_by_organization(db, org_id=org_id)
+
 @router.post("/invoices/{invoice_id}/pay", response_model=schemas.Invoice)
 async def pay_invoice(
     invoice_id: uuid.UUID,
@@ -41,14 +52,16 @@ async def pay_invoice(
 
     return updated_invoice
 
-@router.get("/payouts/by-organization/{org_id}", response_model=list[schemas.Payout])
-async def list_payouts_for_organization(
-    org_id: uuid.UUID,
+@router.post("/payouts/{payout_id}/approve", response_model=schemas.Payout)
+async def approve_payout_endpoint(
+    payout_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user_id: uuid.UUID = Depends(get_current_user_id),
+    user_context: dict = Depends(security.require_admin_role),
 ):
     """
-    List all payouts for a given supplier organization.
+    Approves a pending payout. Admin only.
     """
-    # TODO: Add authz check
-    return await service.get_payouts_by_organization(db, org_id=org_id)
+    approved_payout = await service.approve_payout(db, payout_id=payout_id)
+    if not approved_payout:
+        raise HTTPException(status_code=404, detail="Payout not found or not in pending state.")
+    return approved_payout

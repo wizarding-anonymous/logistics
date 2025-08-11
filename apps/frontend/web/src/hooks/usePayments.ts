@@ -19,3 +19,25 @@ export function usePayInvoice() {
     },
   });
 }
+
+export function useMyPayouts() {
+    return useQuery({
+      queryKey: ['myPayouts'],
+      queryFn: listMyPayouts,
+    });
+}
+
+export function useApprovePayout() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+      mutationFn: (payoutId: string) => approvePayout(payoutId),
+      onSuccess: () => {
+        // When a payout is approved, we should refetch any lists of payouts.
+        // A more specific query key could be used if we had one for pending payouts.
+        queryClient.invalidateQueries({ queryKey: ['myPayouts'] });
+        // Potentially refetch an admin-specific query for pending payouts too
+        queryClient.invalidateQueries({ queryKey: ['pendingPayouts'] });
+      },
+    });
+  }

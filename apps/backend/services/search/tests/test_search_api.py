@@ -18,4 +18,19 @@ def test_search_endpoint(client: TestClient):
         assert response.json() == mock_search_results
 
         # Verify that our service function was called with the correct query
-        mock_search.assert_called_once_with(query="test")
+        mock_search.assert_called_once_with(query="test", status=None, min_price=None, max_price=None)
+
+def test_search_endpoint_with_filters(client: TestClient):
+    """
+    Test the /search endpoint with filters, mocking the service call.
+    """
+    mock_search_results = [{"id": "789", "status": "closed"}]
+
+    with patch('search.service.search_documents', return_value=mock_search_results) as mock_search:
+        response = client.get("/?q=widgets&status=closed&min_price=100")
+
+        assert response.status_code == 200
+        assert response.json() == mock_search_results
+
+        # Verify that our service function was called with all the correct arguments
+        mock_search.assert_called_once_with(query="widgets", status="closed", min_price=100.0, max_price=None)

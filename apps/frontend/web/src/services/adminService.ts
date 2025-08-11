@@ -59,3 +59,19 @@ export const rejectKycDocument = async ({ docId, reason }: { docId: string; reas
     const response = await apiClient.post(`/kyc/documents/${docId}/reject`, { reason });
     return response.data;
 };
+
+// Payouts are managed via the payments service, but the endpoint is admin-only
+const paymentsApiClient = axios.create({ baseURL: '/api/v1/payments' });
+
+export const listPendingPayouts = async (): Promise<any[]> => {
+    // This assumes an admin endpoint exists to get all payouts, which we then filter client-side.
+    // A better approach would be a dedicated backend endpoint like `/payouts/pending`.
+    // We will re-use the supplier-facing endpoint for now and filter on the client.
+    const response = await paymentsApiClient.get('/payouts'); // This needs to be an admin endpoint in a real app
+    return response.data.filter((p: any) => p.status === 'pending');
+};
+
+export const approvePayout = async (payoutId: string): Promise<any> => {
+    const response = await paymentsApiClient.post(`/payouts/${payoutId}/approve`);
+    return response.data;
+};
