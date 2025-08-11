@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useOrder, useUpdateOrderStatus, useSubmitReview } from '@/hooks/useOrder';
 import { useDispute } from '@/hooks/useDisputes';
+import { useDocuments } from '@/hooks/useDocs';
 import { useAuthStore } from '@/state/authStore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +11,8 @@ import { ChatWindow } from '@/components/Chat/ChatWindow';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LeaveReviewForm } from '@/components/Reviews/LeaveReviewForm';
 import { Link } from 'react-router-dom';
+import { DocumentUpload } from '@/components/Documents/DocumentUpload';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 function UpdateStatusForm({ orderId, currentStatus }: { orderId: string, currentStatus: string }) {
     const { mutate: updateStatus, isPending } = useUpdateOrderStatus();
@@ -53,6 +56,7 @@ function OrderDetailsPage() {
   const { orderId } = useParams<{ orderId: string }>();
   const { data: order, isLoading, isError, error } = useOrder(orderId!);
   const { data: dispute } = useDispute(orderId!);
+  const { data: documents } = useDocuments('order', orderId!);
   const { organizationId, id: userId } = useAuthStore();
 
   const isSupplierForOrder = order?.supplier_id === organizationId;
@@ -79,8 +83,9 @@ function OrderDetailsPage() {
         </div>
 
         <Tabs defaultValue="details" className="w-full">
-            <TabsList>
+            <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="details">Details</TabsTrigger>
+                <TabsTrigger value="documents">Documents</TabsTrigger>
                 <TabsTrigger value="chat">Chat</TabsTrigger>
             </TabsList>
             <TabsContent value="details">
@@ -110,6 +115,36 @@ function OrderDetailsPage() {
                         </CardContent>
                     </Card>
                 </div>
+            </TabsContent>
+            <TabsContent value="documents">
+                <Card className="mt-4">
+                    <CardHeader><CardTitle>Order Documents</CardTitle></CardHeader>
+                    <CardContent>
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Filename</TableHead>
+                                    <TableHead>Type</TableHead>
+                                    <TableHead className="text-right">Actions</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {documents?.map(doc => (
+                                    <TableRow key={doc.id}>
+                                        <TableCell>{doc.filename}</TableCell>
+                                        <TableCell>{doc.document_type.toUpperCase()}</TableCell>
+                                        <TableCell className="text-right">
+                                            <a href={doc.download_url} target="_blank" rel="noopener noreferrer">
+                                                <Button variant="outline" size="sm">Download</Button>
+                                            </a>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                        {isSupplierForOrder && <DocumentUpload entityType="order" entityId={order.id} documentType="pod" />}
+                    </CardContent>
+                </Card>
             </TabsContent>
             <TabsContent value="chat">
                 <ChatWindow topic={order.id} />
