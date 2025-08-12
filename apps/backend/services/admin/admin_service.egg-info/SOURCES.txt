@@ -1,0 +1,8 @@
+pyproject.toml
+admin_service.egg-info/PKG-INFO
+admin_service.egg-info/SOURCES.txt
+admin_service.egg-info/dependency_links.txt
+admin_service.egg-info/top_level.txt
+api/v1/admin.py
+tests/conftest.py
+tests/test_admin_api.py

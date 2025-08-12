@@ -1,0 +1,9 @@
+[project]
+name = "chat_service"
+version = "0.1.0"
+description = "A service for real-time chat."
+readme = "README.md"
+requires-python = ">=3.9"
+
+[tool.setuptools.packages.find]
+where = ["."]

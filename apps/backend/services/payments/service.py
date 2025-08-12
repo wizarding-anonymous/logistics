@@ -1,6 +1,7 @@
 import uuid
 from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
 
 from . import models
 
@@ -11,15 +12,15 @@ def _calculate_commission(total_amount: Decimal) -> Decimal:
     """Calculates the marketplace commission."""
     return total_amount * MARKETPLACE_COMMISSION_RATE
 
-async def process_payment_for_order(db: AsyncSession, order_details: dict):
+async def create_invoice_for_order(db: AsyncSession, order_details: dict):
     """
-    This function is triggered by a Kafka event when an order's POD is confirmed.
-    It simulates the entire escrow and payout flow.
+    This function is triggered by an 'order_completed' Kafka event.
+    It creates an invoice and simulates the entire escrow and payout flow.
     """
-    order_id = uuid.UUID(order_details["order_id"])
-    client_org_id = uuid.UUID(order_details["client_organization_id"])
-    total_amount = Decimal(str(order_details["price_amount"]))
-    currency = order_details["price_currency"]
+    order_id = uuid.UUID(order_details["orderId"])
+    client_org_id = uuid.UUID(order_details["clientId"])
+    total_amount = Decimal(str(order_details["totalPrice"]))
+    currency = order_details["currency"]
 
     # 1. Create an Invoice for the client
     new_invoice = models.Invoice(
@@ -67,24 +68,14 @@ async def process_payment_for_order(db: AsyncSession, order_details: dict):
         order_id=order_id,
         amount=payout_amount,
         currency=currency,
-        status=models.PayoutStatus.COMPLETED # Assuming instant payout for now
+        status=models.PayoutStatus.PENDING # Payouts must be approved by an admin
     )
     db.add(new_payout)
     await db.commit()
     await db.refresh(new_payout)
-    print(f"Created Payout {new_payout.id} for supplier {supplier_org_id}")
+    print(f"Created Payout {new_payout.id} for supplier {supplier_org_id} with PENDING status")
 
-    # 5. Create the final payout transaction, linked to the Payout record
-    payout_transaction = models.Transaction(
-        invoice_id=new_invoice.id,
-        payout_id=new_payout.id,
-        transaction_type=models.TransactionType.PAYOUT,
-        amount=payout_amount,
-        notes=f"Payout to supplier for order {order_id}"
-    )
-    db.add(payout_transaction)
-    await db.commit()
-    print(f"Recorded payout transaction for Payout {new_payout.id}")
+    # The payout transaction will now be created when an admin approves the payout.
 
     return new_invoice
 
@@ -104,3 +95,45 @@ async def get_payouts_by_organization(db: AsyncSession, org_id: uuid.UUID):
         .order_by(models.Payout.created_at.desc())
     )
     return result.scalars().all()
+
+async def mark_invoice_as_paid(db: AsyncSession, invoice_id: uuid.UUID, org_id: uuid.UUID):
+    """
+    Marks a given invoice as PAID. Includes an authorization check.
+    """
+    result = await db.execute(select(models.Invoice).where(models.Invoice.id == invoice_id))
+    invoice = result.scalars().first()
+
+    if not invoice:
+        return None # Not found
+
+    # Authz check
+    if invoice.organization_id != org_id:
+        return "unauthorized"
+
+    invoice.status = models.InvoiceStatus.PAID
+    await db.commit()
+    await db.refresh(invoice)
+    return invoice
+
+async def approve_payout(db: AsyncSession, payout_id: uuid.UUID):
+    """
+    Approves a pending payout, marking it as completed and creating the transaction.
+    """
+    payout = await db.get(models.Payout, payout_id)
+    if not payout or payout.status != models.PayoutStatus.PENDING:
+        return None # Not found or not in a state that can be approved
+
+    payout.status = models.PayoutStatus.COMPLETED
+    payout.completed_at = datetime.utcnow()
+
+    # Create the final payout transaction, linked to the Payout record
+    payout_transaction = models.Transaction(
+        payout_id=payout.id,
+        transaction_type=models.TransactionType.PAYOUT,
+        amount=payout.amount,
+        notes=f"Payout to supplier for order {payout.order_id}"
+    )
+    db.add(payout_transaction)
+    await db.commit()
+    await db.refresh(payout)
+    return payout

@@ -5,40 +5,24 @@ from sqlalchemy.orm import selectinload
 
 from . import models, schemas, kafka_producer
 
-# A mock function to simulate fetching offer details from the RFQ service
-async def mock_get_offer_details(offer_id: uuid.UUID):
-    # In a real scenario, this would be an HTTP call to the RFQ service.
-    # For now, it returns dummy data.
-    return {
-        "client_id": uuid.uuid4(),
-        "supplier_id": uuid.uuid4(),
-        "price_amount": 1234.56,
-        "price_currency": "RUB",
-        "segments": [
-            {"origin_address": "Moscow, RU", "destination_address": "St. Petersburg, RU", "transport_type": "auto_ftl"}
-        ]
-    }
-
 async def create_order(db: AsyncSession, order_in: schemas.OrderCreate):
-    # 1. Fetch details from RFQ service using offer_id (mocked for now)
-    offer_details = await mock_get_offer_details(order_in.offer_id)
-
-    # 2. Create the Order instance
+    """
+    Creates a new Order based on the data from an `offer_accepted` event.
+    """
     db_order = models.Order(
-        id=uuid.uuid4(), # Generate ID here to link children
-        client_id=offer_details["client_id"],
-        supplier_id=offer_details["supplier_id"],
-        price_amount=offer_details["price_amount"],
-        price_currency=offer_details["price_currency"],
+        client_id=order_in.client_id,
+        supplier_id=order_in.supplier_id,
+        price_amount=order_in.price_amount,
+        price_currency=order_in.price_currency,
         status=models.OrderStatus.CREATED
     )
+    db.add(db_order)
 
-    # 3. Create ShipmentSegments
-    for segment_data in offer_details.get("segments", []):
-        db_segment = models.ShipmentSegment(order_id=db_order.id, **segment_data)
-        db.add(db_segment)
+    # It's better to commit here to get the order ID before creating children,
+    # or configure the session to do this automatically.
+    # For now, we assume the relationship handles this.
 
-    # 4. Create the initial StatusHistory entry
+    # Create the initial StatusHistory entry
     db_status_history = models.StatusHistory(
         order_id=db_order.id,
         status=models.OrderStatus.CREATED,
@@ -88,10 +72,19 @@ async def list_orders(db: AsyncSession, skip: int = 0, limit: int = 100):
     )
     return result.scalars().all()
 
-async def update_order_status(db: AsyncSession, order_id: uuid.UUID, status_update: schemas.OrderStatusUpdate):
+async def update_order_status(
+    db: AsyncSession,
+    order_id: uuid.UUID,
+    status_update: schemas.OrderStatusUpdate,
+    user_context: dict,
+):
     db_order = await get_order_by_id(db, order_id)
     if not db_order:
         return None
+
+    # Authorization Check: Only the assigned supplier can update the status
+    if db_order.supplier_id != user_context["org_id"]:
+        return "unauthorized" # Special return value to indicate auth failure
 
     # Update status and create a history entry
     db_order.status = status_update.status
@@ -112,12 +105,52 @@ async def update_order_status(db: AsyncSession, order_id: uuid.UUID, status_upda
             "newStatus": db_order.status.value,
         }
     )
+    # If the order is now complete, publish an event for the billing service
     if db_order.status == models.OrderStatus.POD_CONFIRMED:
-        kafka_producer.publish_pod_confirmed(
+        kafka_producer.publish_order_completed(
             {
                 "orderId": str(db_order.id),
-                "confirmedBy": "user_id_placeholder" # This would come from the current user context
+                "clientId": str(db_order.client_id),
+                "supplierId": str(db_order.supplier_id),
+                "totalPrice": float(db_order.price_amount),
+                "currency": db_order.price_currency,
+                "confirmedAt": db_order.updated_at.isoformat(),
             }
         )
 
     return db_order
+
+async def create_review_for_order(db: AsyncSession, order_id: uuid.UUID, review_in: schemas.ReviewCreate, user_context: dict):
+    """
+    Creates a review for a completed order.
+    """
+    order = await get_order_by_id(db, order_id=order_id)
+    if not order:
+        return None # Not found
+
+    # Authz check: Only the client who created the order can review it.
+    if order.client_id != user_context["org_id"]:
+        return "unauthorized"
+
+    # Business logic check: Can only review a completed order
+    if order.status != models.OrderStatus.CLOSED and order.status != models.OrderStatus.POD_CONFIRMED:
+        return "not_completed"
+
+    # Business logic check: Can only review once
+    if order.review:
+        return "already_reviewed"
+
+    db_review = models.Review(
+        order_id=order_id,
+        reviewer_id=user_context["user_id"],
+        rating=review_in.rating,
+        comment=review_in.comment
+    )
+    db.add(db_review)
+    await db.commit()
+    await db.refresh(db_review)
+
+    # TODO: In a real app, publish a "review_created" event here
+    # so the catalog service can update the supplier's average rating.
+
+    return db_review

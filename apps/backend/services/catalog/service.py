@@ -58,14 +58,31 @@ async def get_service_offering_by_id(db: AsyncSession, service_id: uuid.UUID):
     )
     return result.scalars().first()
 
+async def list_service_offerings_by_supplier(db: AsyncSession, supplier_org_id: uuid.UUID):
+    """
+    Retrieves a list of all service offerings for a specific supplier organization.
+    """
+    result = await db.execute(
+        select(models.ServiceOffering)
+        .where(models.ServiceOffering.supplier_organization_id == supplier_org_id)
+        .options(selectinload(models.ServiceOffering.tariffs))
+        .order_by(models.ServiceOffering.created_at.desc())
+    )
+    return result.scalars().all()
+
 async def update_service_offering(
     db: AsyncSession,
     service_id: uuid.UUID,
-    service_in: schemas.ServiceOfferingUpdate
+    service_in: schemas.ServiceOfferingUpdate,
+    supplier_org_id: uuid.UUID # Added for authorization check
 ):
     db_service = await get_service_offering_by_id(db, service_id=service_id)
     if not db_service:
         return None
+
+    # Authorization check: Ensure the user's org matches the service's org
+    if db_service.supplier_organization_id != supplier_org_id:
+        return None # Or raise an exception
 
     update_data = service_in.dict(exclude_unset=True, exclude={"tariffs"})
     for key, value in update_data.items():

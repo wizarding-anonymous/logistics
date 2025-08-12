@@ -1,0 +1,9 @@
+[project]
+name = "auth_service"
+version = "0.1.0"
+description = "A service for authentication and user management."
+readme = "README.md"
+requires-python = ">=3.9"
+
+[tool.setuptools.packages.find]
+where = ["."]

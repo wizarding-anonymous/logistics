@@ -42,6 +42,21 @@ class OrderStatusUpdate(BaseModel):
 # Schemas for API Responses
 # =================================
 
+class ReviewBase(BaseModel):
+    rating: int = Field(..., gt=0, le=5, description="Rating from 1 to 5 stars.")
+    comment: Optional[str] = None
+
+class ReviewCreate(ReviewBase):
+    pass
+
+class Review(ReviewBase):
+    id: uuid.UUID
+    order_id: uuid.UUID
+    reviewer_id: uuid.UUID
+    timestamp: datetime
+    class Config:
+        orm_mode = True
+
 # The full Order model to be returned by the API
 class Order(BaseModel):
     id: uuid.UUID
@@ -54,6 +69,7 @@ class Order(BaseModel):
     updated_at: datetime
     segments: List[ShipmentSegment] = []
     status_history: List[StatusHistory] = []
+    review: Optional[Review] = None
 
     class Config:
         # This allows Pydantic to read the data from ORM models

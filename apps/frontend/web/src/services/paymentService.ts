@@ -3,18 +3,10 @@ import { z } from 'zod';
 import { useAuthStore } from '@/state/authStore';
 
 // =================================
-// Schemas for validation
+// Zod Schemas
 // =================================
 
-const TransactionSchema = z.object({
-  id: z.string().uuid(),
-  transaction_type: z.string(),
-  amount: z.number(),
-  notes: z.string().nullable(),
-  created_at: z.string().datetime(),
-});
-
-const InvoiceSchema = z.object({
+export const InvoiceSchema = z.object({
   id: z.string().uuid(),
   order_id: z.string().uuid(),
   organization_id: z.string().uuid(),
@@ -22,22 +14,20 @@ const InvoiceSchema = z.object({
   amount: z.number(),
   currency: z.string(),
   created_at: z.string().datetime(),
-  updated_at: z.string().datetime(),
-  transactions: z.array(TransactionSchema),
 });
 
 export type Invoice = z.infer<typeof InvoiceSchema>;
+const InvoiceListSchema = z.array(InvoiceSchema);
 
 // =================================
 // API Client Setup
 // =================================
 
-const paymentApiClient = axios.create({
+const apiClient = axios.create({
   baseURL: '/api/v1/payments',
 });
 
-// Add a request interceptor to include the auth token
-paymentApiClient.interceptors.request.use((config) => {
+apiClient.interceptors.request.use((config) => {
   const token = useAuthStore.getState().accessToken;
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -49,7 +39,44 @@ paymentApiClient.interceptors.request.use((config) => {
 // API Functions
 // =================================
 
-export const getInvoiceForOrder = async (orderId: string): Promise<Invoice> => {
-  const response = await paymentApiClient.get(`/invoices/by-order/${orderId}`);
+export const listMyInvoices = async (): Promise<Invoice[]> => {
+  const response = await apiClient.get('/invoices');
+  return InvoiceListSchema.parse(response.data);
+};
+
+export const payInvoice = async (invoiceId: string): Promise<Invoice> => {
+  const response = await apiClient.post(`/invoices/${invoiceId}/pay`);
   return InvoiceSchema.parse(response.data);
+};
+
+export const getInvoiceById = async (invoiceId: string): Promise<Invoice> => {
+    // This endpoint doesn't exist yet, but we'll need it for the InvoiceDetailsPage
+    // For now, it will fail, but we'll add the endpoint later if needed.
+    const response = await apiClient.get(`/invoices/${invoiceId}`);
+    return InvoiceSchema.parse(response.data);
+}
+
+// Payout-related functions
+const PayoutSchema = z.object({
+    id: z.string().uuid(),
+    supplier_organization_id: z.string().uuid(),
+    order_id: z.string().uuid(),
+    amount: z.number(),
+    currency: z.string(),
+    status: z.string(),
+    created_at: z.string().datetime(),
+    completed_at: z.string().datetime().nullable(),
+});
+export type Payout = z.infer<typeof PayoutSchema>;
+const PayoutListSchema = z.array(PayoutSchema);
+
+export const listMyPayouts = async (): Promise<Payout[]> => {
+    const response = await apiClient.get('/payouts');
+    return PayoutListSchema.parse(response.data);
+};
+
+// This would be an admin-only function
+export const approvePayout = async (payoutId: string): Promise<Payout> => {
+    const response = await apiClient.post(`/payouts/${payoutId}/approve`);
+    return PayoutSchema.parse(response.data);
 };

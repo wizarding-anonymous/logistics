@@ -1,0 +1,8 @@
+pyproject.toml
+api/v1/search.py
+search_service.egg-info/PKG-INFO
+search_service.egg-info/SOURCES.txt
+search_service.egg-info/dependency_links.txt
+search_service.egg-info/top_level.txt
+tests/conftest.py
+tests/test_search_api.py

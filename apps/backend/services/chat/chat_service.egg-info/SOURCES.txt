@@ -1,0 +1,8 @@
+pyproject.toml
+api/v1/chat.py
+chat_service.egg-info/PKG-INFO
+chat_service.egg-info/SOURCES.txt
+chat_service.egg-info/dependency_links.txt
+chat_service.egg-info/top_level.txt
+tests/conftest.py
+tests/test_chat_api.py

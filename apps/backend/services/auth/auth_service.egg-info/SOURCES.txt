@@ -1,0 +1,12 @@
+pyproject.toml
+api/__init__.py
+api/v1/__init__.py
+api/v1/auth.py
+auth_service.egg-info/PKG-INFO
+auth_service.egg-info/SOURCES.txt
+auth_service.egg-info/dependency_links.txt
+auth_service.egg-info/top_level.txt
+tests/conftest.py
+tests/test_auth_security.py
+tests/test_kyc_api.py
+tests/test_registration_api.py

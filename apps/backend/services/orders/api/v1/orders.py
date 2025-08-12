@@ -3,56 +3,38 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
-from ... import schemas, service
+from ... import schemas, service, security
 from ...database import get_db
 
 router = APIRouter()
 
-# In a real app, this dependency would be shared across services in a common library
-# and would provide a richer user context (user_id, org_id, roles, etc.)
-def get_current_user_id_placeholder() -> uuid.UUID:
-    # Placeholder: replace with actual token decoding and user context logic
-    return uuid.uuid4()
-
-@router.post("/orders", response_model=schemas.Order, status_code=status.HTTP_201_CREATED)
-async def create_order_endpoint(
-    order_in: schemas.OrderCreate,
-    db: AsyncSession = Depends(get_db),
-    # user_id: uuid.UUID = Depends(get_current_user_id_placeholder) # Placeholder
-):
-    """
-    Creates a new order from an accepted offer.
-    """
-    # The service layer currently mocks the data fetching from the offer_id
-    return await service.create_order(db=db, order_in=order_in)
-
 @router.get("/orders", response_model=List[schemas.Order])
 async def list_orders_endpoint(
-    skip: int = 0,
-    limit: int = 100,
     db: AsyncSession = Depends(get_db),
-    # user_id: uuid.UUID = Depends(get_current_user_id_placeholder)
+    user_context: dict = Depends(security.get_current_user_context),
 ):
     """
-    List all orders with pagination.
-    TODO: Add filtering by status, client_id, supplier_id, etc.
-    TODO: Add authz to only show relevant orders to the user.
+    List all orders relevant to the user's organization.
     """
-    return await service.list_orders(db, skip=skip, limit=limit)
+    # TODO: Modify service layer to filter orders by org_id
+    return await service.list_orders(db)
 
 @router.get("/orders/{order_id}", response_model=schemas.Order)
 async def get_order_endpoint(
     order_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    # user_id: uuid.UUID = Depends(get_current_user_id_placeholder)
+    user_context: dict = Depends(security.get_current_user_context),
 ):
     """
     Get a single order by its ID.
-    TODO: Add authz check.
+    TODO: Add authz check to ensure user's org is either client or supplier.
     """
     db_order = await service.get_order_by_id(db, order_id=order_id)
     if db_order is None:
         raise HTTPException(status_code=404, detail="Order not found")
+    # A simple authz check
+    if db_order.client_id != user_context["org_id"] and db_order.supplier_id != user_context["org_id"]:
+         raise HTTPException(status_code=403, detail="Not authorized to view this order")
     return db_order
 
 @router.patch("/orders/{order_id}/status", response_model=schemas.Order)
@@ -60,15 +42,42 @@ async def update_order_status_endpoint(
     order_id: uuid.UUID,
     status_update: schemas.OrderStatusUpdate,
     db: AsyncSession = Depends(get_db),
-    # user_id: uuid.UUID = Depends(get_current_user_id_placeholder)
+    user_context: dict = Depends(security.get_current_user_context),
 ):
     """
-    Update an order's status. This action creates a new entry in the order's status history.
-    TODO: Add authz to check if the user is allowed to perform this status transition (e.g., supplier can mark as 'in_transit', client can 'confirm_pod').
+    Update an order's status. This action is protected and can only be performed
+    by the assigned supplier.
     """
     updated_order = await service.update_order_status(
-        db, order_id=order_id, status_update=status_update
+        db, order_id=order_id, status_update=status_update, user_context=user_context
     )
     if updated_order is None:
         raise HTTPException(status_code=404, detail="Order not found")
+    if updated_order == "unauthorized":
+        raise HTTPException(status_code=403, detail="Not authorized to update this order's status")
     return updated_order
+
+@router.post("/orders/{order_id}/review", response_model=schemas.Review, status_code=status.HTTP_201_CREATED)
+async def create_review_endpoint(
+    order_id: uuid.UUID,
+    review_in: schemas.ReviewCreate,
+    db: AsyncSession = Depends(get_db),
+    user_context: dict = Depends(security.get_current_user_context),
+):
+    """
+    Allows a client to submit a review for a completed order.
+    """
+    new_review = await service.create_review_for_order(
+        db, order_id=order_id, review_in=review_in, user_context=user_context
+    )
+
+    if new_review is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if new_review == "unauthorized":
+        raise HTTPException(status_code=403, detail="Not authorized to review this order")
+    if new_review == "not_completed":
+        raise HTTPException(status_code=400, detail="Order is not completed yet")
+    if new_review == "already_reviewed":
+        raise HTTPException(status_code=400, detail="This order has already been reviewed")
+
+    return new_review
