@@ -22,3 +22,7 @@ python-dotenv
 httpx
 python-json-logger
 PyYAML
+
+# Redis for caching and rate limiting
+redis[hiredis]
+aioredis

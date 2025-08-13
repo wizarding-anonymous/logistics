@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Any
+from typing import Any, List, Optional
 
 from ... import schemas, service, security, models
 from ...database import get_db
@@ -112,6 +112,7 @@ async def login_for_access_token_with_tfa(
 ):
     """
     Get an access token for a user with TFA enabled.
+    Supports both TOTP codes and backup codes.
     """
     extra_log = {"client_ip": request.client.host, "username": form_data.username}
     user = await service.authenticate_user(db, username=form_data.username, password=form_data.password)
@@ -129,11 +130,22 @@ async def login_for_access_token_with_tfa(
             detail="TFA is not enabled for this account.",
         )
 
-    if not security.verify_tfa_code(secret=user.tfa_secret, code=form_data.tfa_code):
-        audit_logger.warning("Login failed (TFA): Invalid TFA code", extra={"user_id": str(user.id), **extra_log})
+    # Verify either TOTP code or backup code
+    auth_valid = False
+    auth_method = ""
+    
+    if form_data.tfa_code:
+        auth_valid = security.verify_tfa_code(secret=user.tfa_secret, code=form_data.tfa_code)
+        auth_method = "totp"
+    elif form_data.backup_code:
+        auth_valid = await service.verify_backup_code(db, user.id, form_data.backup_code)
+        auth_method = "backup_code"
+    
+    if not auth_valid:
+        audit_logger.warning(f"Login failed (TFA): Invalid {auth_method}", extra={"user_id": str(user.id), **extra_log})
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid TFA code.",
+            detail="Invalid authentication code.",
         )
 
     token_data = {
@@ -145,7 +157,7 @@ async def login_for_access_token_with_tfa(
     access_token = security.create_access_token(data=token_data)
     refresh_token = security.create_refresh_token(data={"sub": str(user.id)})
 
-    audit_logger.info("Login successful (TFA)", extra={"user_id": str(user.id), **extra_log})
+    audit_logger.info(f"Login successful (TFA-{auth_method})", extra={"user_id": str(user.id), **extra_log})
     return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
 @router.get("/users/me", response_model=schemas.User)
@@ -200,7 +212,7 @@ async def setup_tfa(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Generate and return a TFA secret and provisioning URI for the user.
+    Generate and return a TFA secret, provisioning URI, and backup codes for the user.
     The secret is stored temporarily but not yet active.
     """
     extra_log = {"client_ip": request.client.host, "user_id": str(current_user.id)}
@@ -210,10 +222,13 @@ async def setup_tfa(
 
     secret = security.generate_tfa_secret()
     await service.set_user_tfa_secret(db, user_id=current_user.id, secret=secret)
+    
+    # Generate backup codes
+    backup_codes = await service.generate_backup_codes(db, current_user.id)
 
     uri = security.generate_tfa_provisioning_uri(current_user.email, secret)
     audit_logger.info("TFA setup initiated", extra=extra_log)
-    return {"secret": secret, "provisioning_uri": uri}
+    return {"secret": secret, "provisioning_uri": uri, "backup_codes": backup_codes}
 
 @router.post("/2fa/enable", status_code=status.HTTP_200_OK)
 async def enable_tfa(
@@ -263,6 +278,46 @@ async def disable_tfa(
 # Session Management Routes
 # =================================
 
+@router.get("/sessions", response_model=schemas.SessionListResponse)
+async def list_user_sessions(
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    List all active sessions for the current user.
+    """
+    from ...session_service import session_service
+    
+    sessions = await session_service.get_user_sessions(db, str(current_user.id))
+    active_sessions = [s for s in sessions if s.is_active]
+    
+    return {
+        "sessions": sessions,
+        "total_count": len(sessions),
+        "active_count": len(active_sessions)
+    }
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_200_OK)
+async def revoke_session(
+    session_id: str,
+    request: Request,
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Revoke a specific session.
+    """
+    from ...session_service import session_service
+    
+    extra_log = {"client_ip": request.client.host, "user_id": str(current_user.id), "session_id": session_id}
+    
+    success = await session_service.revoke_session(db, session_id, str(current_user.id))
+    if not success:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    audit_logger.info("User session revoked", extra=extra_log)
+    return {"message": "Session has been revoked."}
+
 @router.post("/sessions/revoke-all", status_code=status.HTTP_200_OK)
 async def revoke_all_sessions(
     request: Request,
@@ -272,7 +327,146 @@ async def revoke_all_sessions(
     """
     Revoke all active sessions for the current user.
     """
+    from ...session_service import session_service
+    
     extra_log = {"client_ip": request.client.host, "user_id": str(current_user.id)}
-    await service.revoke_all_user_tokens(db, user_id=current_user.id)
-    audit_logger.info("All user sessions revoked", extra=extra_log)
-    return {"message": "All sessions have been revoked. Please log in again."}
+    
+    revoked_count = await session_service.revoke_all_user_sessions(db, str(current_user.id))
+    audit_logger.info(f"All user sessions revoked ({revoked_count})", extra=extra_log)
+    return {"message": f"All {revoked_count} sessions have been revoked. Please log in again."}
+
+# =================================
+# Password Management Routes
+# =================================
+
+@router.post("/password/change", status_code=status.HTTP_200_OK)
+async def change_password(
+    password_data: schemas.PasswordChangeRequest,
+    request: Request,
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Change user password.
+    """
+    extra_log = {"client_ip": request.client.host, "user_id": str(current_user.id)}
+    
+    result = await service.change_password(
+        db, current_user.id, password_data.current_password, password_data.new_password
+    )
+    
+    if not result:
+        audit_logger.warning("Password change failed: Invalid current password", extra=extra_log)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect"
+        )
+    
+    audit_logger.info("Password changed successfully", extra=extra_log)
+    return {"message": "Password changed successfully. Please log in again."}
+
+# =================================
+# Backup Codes Routes
+# =================================
+
+@router.post("/2fa/backup-codes/regenerate", response_model=List[str])
+async def regenerate_backup_codes(
+    request: Request,
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Regenerate backup codes for 2FA.
+    """
+    extra_log = {"client_ip": request.client.host, "user_id": str(current_user.id)}
+    
+    if not current_user.is_tfa_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="2FA is not enabled for this account"
+        )
+    
+    backup_codes = await service.generate_backup_codes(db, current_user.id)
+    audit_logger.info("Backup codes regenerated", extra=extra_log)
+    
+    return backup_codes
+
+@router.get("/2fa/backup-codes/count")
+async def get_backup_codes_count(
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    Get the number of remaining backup codes.
+    """
+    if not current_user.is_tfa_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="2FA is not enabled for this account"
+        )
+    
+    remaining_count = len(current_user.backup_codes) if current_user.backup_codes else 0
+    return {"remaining_backup_codes": remaining_count}
+
+# =================================
+# Profile Management Routes
+# =================================
+
+@router.put("/users/me/profile", response_model=schemas.User)
+async def update_profile(
+    profile_data: dict,
+    request: Request,
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Update user profile information.
+    """
+    extra_log = {"client_ip": request.client.host, "user_id": str(current_user.id)}
+    
+    updated_user = await service.update_user_profile(db, current_user.id, profile_data)
+    if not updated_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    audit_logger.info("Profile updated", extra=extra_log)
+    return updated_user
+
+# =================================
+# Security Information Routes
+# =================================
+
+@router.get("/security/summary", response_model=schemas.SecuritySummaryResponse)
+async def get_security_summary(
+    hours: int = 24,
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get security event summary for the current user.
+    """
+    from ...audit_service import audit_service
+    
+    summary = await audit_service.get_security_summary(db, str(current_user.id), hours)
+    return summary
+
+@router.get("/audit-logs", response_model=schemas.AuditLogListResponse)
+async def get_audit_logs(
+    event_type: Optional[str] = None,
+    severity: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get audit logs for the current user.
+    """
+    from ...audit_service import audit_service
+    
+    logs = await audit_service.get_audit_logs(
+        db, str(current_user.id), event_type, severity, None, None, limit, offset
+    )
+    
+    return {
+        "logs": logs,
+        "total_count": len(logs)
+    }

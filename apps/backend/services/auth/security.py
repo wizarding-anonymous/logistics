@@ -56,6 +56,81 @@ def decode_token(token: str) -> Optional[dict]:
         return None
 
 # =================================
+# Password Policy Validation
+# =================================
+
+import re
+import secrets
+import string
+from typing import List, Tuple
+
+class PasswordPolicy:
+    """Password policy validation"""
+    
+    MIN_LENGTH = 12
+    REQUIRE_UPPERCASE = True
+    REQUIRE_LOWERCASE = True
+    REQUIRE_DIGITS = True
+    REQUIRE_SPECIAL = True
+    SPECIAL_CHARS = "!@#$%^&*(),.?\":{}|<>"
+    
+    @classmethod
+    def validate_password(cls, password: str) -> Tuple[bool, List[str]]:
+        """
+        Validate password against policy
+        Returns: (is_valid, list_of_errors)
+        """
+        errors = []
+        
+        if len(password) < cls.MIN_LENGTH:
+            errors.append(f"Password must be at least {cls.MIN_LENGTH} characters long")
+        
+        if cls.REQUIRE_UPPERCASE and not re.search(r'[A-Z]', password):
+            errors.append("Password must contain at least one uppercase letter")
+        
+        if cls.REQUIRE_LOWERCASE and not re.search(r'[a-z]', password):
+            errors.append("Password must contain at least one lowercase letter")
+        
+        if cls.REQUIRE_DIGITS and not re.search(r'\d', password):
+            errors.append("Password must contain at least one digit")
+        
+        if cls.REQUIRE_SPECIAL and not re.search(f'[{re.escape(cls.SPECIAL_CHARS)}]', password):
+            errors.append(f"Password must contain at least one special character: {cls.SPECIAL_CHARS}")
+        
+        # Check for common patterns
+        if re.search(r'(.)\1{2,}', password):
+            errors.append("Password cannot contain more than 2 consecutive identical characters")
+        
+        # Check for sequential characters
+        if cls._has_sequential_chars(password):
+            errors.append("Password cannot contain sequential characters (e.g., 123, abc)")
+        
+        return len(errors) == 0, errors
+    
+    @staticmethod
+    def _has_sequential_chars(password: str, min_length: int = 3) -> bool:
+        """Check for sequential characters"""
+        password_lower = password.lower()
+        
+        for i in range(len(password_lower) - min_length + 1):
+            substring = password_lower[i:i + min_length]
+            
+            # Check for sequential letters
+            if all(ord(substring[j]) == ord(substring[0]) + j for j in range(len(substring))):
+                return True
+            
+            # Check for sequential digits
+            if substring.isdigit():
+                if all(int(substring[j]) == int(substring[0]) + j for j in range(len(substring))):
+                    return True
+        
+        return False
+
+def validate_password_strength(password: str) -> Tuple[bool, List[str]]:
+    """Validate password strength using policy"""
+    return PasswordPolicy.validate_password(password)
+
+# =================================
 # Two-Factor Authentication (TFA/TOTP)
 # =================================
 
@@ -73,6 +148,39 @@ def verify_tfa_code(secret: str, code: str) -> bool:
 def generate_tfa_provisioning_uri(email: str, secret: str, issuer_name: str = "LogisticsMarketplace") -> str:
     """Generate a provisioning URI for use in authenticator apps."""
     return pyotp.totp.TOTP(secret).provisioning_uri(name=email, issuer_name=issuer_name)
+
+def generate_backup_codes(count: int = 10) -> List[str]:
+    """Generate backup codes for 2FA recovery"""
+    codes = []
+    for _ in range(count):
+        # Generate 8-character alphanumeric code
+        code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
+        # Format as XXXX-XXXX for readability
+        formatted_code = f"{code[:4]}-{code[4:]}"
+        codes.append(formatted_code)
+    return codes
+
+def verify_backup_code(stored_codes: List[str], provided_code: str) -> Tuple[bool, List[str]]:
+    """
+    Verify backup code and return updated list (with used code removed)
+    Returns: (is_valid, remaining_codes)
+    """
+    if not stored_codes or not provided_code:
+        return False, stored_codes
+    
+    # Normalize the provided code
+    normalized_code = provided_code.upper().replace('-', '').replace(' ', '')
+    
+    for i, stored_code in enumerate(stored_codes):
+        # Normalize stored code for comparison
+        normalized_stored = stored_code.upper().replace('-', '').replace(' ', '')
+        
+        if normalized_code == normalized_stored:
+            # Remove the used code
+            remaining_codes = stored_codes[:i] + stored_codes[i+1:]
+            return True, remaining_codes
+    
+    return False, stored_codes
 
 # =================================
 # reCAPTCHA Verification
