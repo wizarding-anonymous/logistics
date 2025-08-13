@@ -23,8 +23,12 @@ permissions:
     description: "Read own orders (as either client or supplier)."
   - id: orders:read:all
     description: "Read all orders on the platform (for support/admin)."
+  - id: orders:update:own
+    description: "Modify the details of an order before it is processed."
   - id: orders:update:status
     description: "Update the status of an order (e.g., in_transit, delivered)."
+  - id: orders:cancel:own
+    description: "Cancel an order before it is completed."
   - id: tracking:read:own
     description: "View detailed tracking information for own orders."
 
@@ -57,6 +61,8 @@ permissions:
     description: "Manage own organization's subscription plan."
 
   # Platform Administration
+  - id: admin:users:read
+    description: "Read-only access to users and organizations."
   - id: admin:users:manage
     description: "Create, read, update, and delete any user or organization."
   - id: admin:platform:config
@@ -79,6 +85,8 @@ roles:
       - rfq:read:own
       - rfq:cancel:own
       - orders:read:own
+      - orders:update:own
+      - orders:cancel:own
       - tracking:read:own
       - documents:upload:own
       - documents:read:own
@@ -109,6 +117,7 @@ roles:
       - orders:read:all
       - disputes:manage
       - kyc:manage
+      - admin:users:read
       # Note: Does not have full user management, can perhaps lock/unlock accounts.
 
   - name: accountant

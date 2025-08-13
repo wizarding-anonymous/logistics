@@ -90,7 +90,7 @@ async def create_offer(db: AsyncSession, offer_in: schemas.OfferCreate, rfq_id: 
     await db.refresh(db_offer)
     return db_offer
 
-async def accept_offer(db: AsyncSession, offer_id: uuid.UUID):
+async def accept_offer(db: AsyncSession, offer_id: uuid.UUID, user_org_id: uuid.UUID):
     offer_result = await db.execute(
         select(models.Offer)
         .options(selectinload(models.Offer.rfq)) # Eager load the RFQ
@@ -99,11 +99,14 @@ async def accept_offer(db: AsyncSession, offer_id: uuid.UUID):
     offer_to_accept = offer_result.scalars().first()
 
     if not offer_to_accept or offer_to_accept.status != models.OfferStatus.PENDING:
-        return None
-
-    offer_to_accept.status = models.OfferStatus.ACCEPTED
+        return None # Offer not found or not in correct state
 
     rfq = offer_to_accept.rfq
+    # Authorization check: ensure the user accepting belongs to the org that created the RFQ
+    if rfq.organization_id != user_org_id:
+        return "unauthorized"
+
+    offer_to_accept.status = models.OfferStatus.ACCEPTED
     rfq.status = models.RFQStatus.CLOSED
 
     await db.execute(

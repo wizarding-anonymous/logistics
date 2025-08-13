@@ -46,3 +46,52 @@ async def reject_document(
     if not rejected_doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return rejected_doc
+
+@router.get("/users", response_model=List[schemas.User])
+async def list_users_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _ = Depends(security.require_permission("admin:users:read")),
+):
+    """
+    Get a list of all users.
+    """
+    return await service.list_users(db)
+
+@router.get("/organizations", response_model=List[schemas.Organization])
+async def list_organizations_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _ = Depends(security.require_permission("admin:users:read")),
+):
+    """
+    Get a list of all organizations.
+    """
+    return await service.list_organizations(db)
+
+@router.patch("/users/{user_id}/deactivate", response_model=schemas.User)
+async def deactivate_user_endpoint(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _ = Depends(security.require_permission("admin:users:manage")),
+):
+    """
+    Deactivate a user account.
+    """
+    user = await service.deactivate_user(db, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+@router.patch("/users/{user_id}/roles", response_model=schemas.User)
+async def update_user_roles_endpoint(
+    user_id: uuid.UUID,
+    payload: schemas.UpdateUserRoles,
+    db: AsyncSession = Depends(get_db),
+    _ = Depends(security.require_permission("admin:users:manage")),
+):
+    """
+    Update the roles of a user.
+    """
+    user = await service.update_user_roles(db, user_id, payload.roles)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user

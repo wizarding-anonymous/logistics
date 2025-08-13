@@ -1,0 +1,10 @@
+# Core Framework
+fastapi
+uvicorn[standard]
+
+# Data Validation
+pydantic
+
+# Utilities
+python-dotenv
+httpx

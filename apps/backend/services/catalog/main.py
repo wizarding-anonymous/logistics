@@ -1,6 +1,8 @@
+import asyncio
 from fastapi import FastAPI
 from .api.v1 import catalog
 from .database import Base, engine
+from . import kafka_consumer
 
 async def create_tables():
     async with engine.begin() as conn:
@@ -16,6 +18,10 @@ app = FastAPI(
 async def on_startup():
     # Create the database tables if they don't exist
     await create_tables()
+    # Start the Kafka consumer in a background task
+    loop = asyncio.get_event_loop()
+    loop.create_task(kafka_consumer.start_consumer())
+
 
 # Include the API router
 app.include_router(catalog.router, prefix="/api/v1/catalog", tags=["Service Catalog"])

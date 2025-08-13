@@ -98,3 +98,18 @@ async def update_service_offering_endpoint(
     if updated_service is None:
         raise HTTPException(status_code=404, detail="Service offering not found or not authorized")
     return updated_service
+
+@router.get("/internal/tariffs", response_model=List[schemas.Tariff])
+async def get_tariffs_for_pricing_endpoint(
+    supplier_org_id: uuid.UUID,
+    service_type: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Internal endpoint for the Pricing service to fetch relevant tariffs.
+    NOTE: In a production system, this should be secured (e.g., via network policies
+    or a service-to-service auth token) to prevent external access.
+    """
+    return await service.get_tariffs_for_supplier(
+        db=db, supplier_org_id=supplier_org_id, service_type=service_type
+    )

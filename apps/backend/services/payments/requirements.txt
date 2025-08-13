@@ -16,3 +16,5 @@ kafka-python
 
 # Utilities
 python-dotenv
+weasyprint
+Jinja2

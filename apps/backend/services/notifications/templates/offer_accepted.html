@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Your Offer Was Accepted!</title>
+</head>
+<body>
+    <p>Congratulations!</p>
+    <p>Your offer for RFQ <strong>{{ rfq_id | string | slice(0, 8) }}</strong> has been accepted by the client.</p>
+    <p>A new order has been created with ID: <strong>{{ order_id | string | slice(0, 8) }}</strong>.</p>
+</body>
+</html>

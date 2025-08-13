@@ -21,3 +21,4 @@ qrcode[pil]
 python-dotenv
 httpx
 python-json-logger
+PyYAML

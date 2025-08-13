@@ -6,6 +6,17 @@ from datetime import datetime
 
 from . import models, schemas
 
+async def list_open_disputes(db: AsyncSession):
+    """
+    Returns a list of all disputes with 'open' status.
+    """
+    result = await db.execute(
+        select(models.Dispute)
+        .where(models.Dispute.status == models.DisputeStatus.OPEN)
+        .order_by(models.Dispute.created_at.asc())
+    )
+    return result.scalars().all()
+
 async def get_dispute_by_order_id(db: AsyncSession, order_id: uuid.UUID):
     result = await db.execute(
         select(models.Dispute)

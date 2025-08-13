@@ -74,3 +74,15 @@ class Order(BaseModel):
     class Config:
         # This allows Pydantic to read the data from ORM models
         orm_mode = True
+
+
+# --- Schemas for Order Update ---
+
+class ShipmentSegmentUpdate(BaseModel):
+    # We need an ID to identify which segment to update
+    id: int
+    origin_address: Optional[str] = None
+    destination_address: Optional[str] = None
+
+class OrderUpdate(BaseModel):
+    segments: Optional[List[ShipmentSegmentUpdate]] = None
