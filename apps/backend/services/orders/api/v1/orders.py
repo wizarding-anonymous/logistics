@@ -11,29 +11,30 @@ router = APIRouter()
 @router.get("/orders", response_model=List[schemas.Order])
 async def list_orders_endpoint(
     db: AsyncSession = Depends(get_db),
-    user_context: dict = Depends(security.get_current_user_context),
+    user_context: security.UserContext = Depends(security.get_current_user_context),
 ):
     """
     List all orders relevant to the user's organization.
     """
-    # TODO: Modify service layer to filter orders by org_id
-    return await service.list_orders(db)
+    if not user_context.org_id:
+        raise HTTPException(status_code=403, detail="User is not associated with an organization.")
+    return await service.list_orders_for_organization(db, org_id=user_context.org_id)
 
 @router.get("/orders/{order_id}", response_model=schemas.Order)
 async def get_order_endpoint(
     order_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user_context: dict = Depends(security.get_current_user_context),
+    user_context: security.UserContext = Depends(security.get_current_user_context),
 ):
     """
     Get a single order by its ID.
-    TODO: Add authz check to ensure user's org is either client or supplier.
     """
     db_order = await service.get_order_by_id(db, order_id=order_id)
     if db_order is None:
         raise HTTPException(status_code=404, detail="Order not found")
-    # A simple authz check
-    if db_order.client_id != user_context["org_id"] and db_order.supplier_id != user_context["org_id"]:
+
+    # Authorization check
+    if user_context.org_id not in [db_order.client_id, db_order.supplier_id]:
          raise HTTPException(status_code=403, detail="Not authorized to view this order")
     return db_order
 
@@ -81,3 +82,44 @@ async def create_review_endpoint(
         raise HTTPException(status_code=400, detail="This order has already been reviewed")
 
     return new_review
+
+@router.post("/orders/{order_id}/cancel", response_model=schemas.Order)
+async def cancel_order_endpoint(
+    order_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user_context: dict = Depends(security.get_current_user_context),
+    _ = Depends(security.require_permission("orders:cancel:own")),
+):
+    """
+    Allows a client to cancel their own order.
+    """
+    cancelled_order = await service.cancel_order_by_user(db, order_id, user_context)
+    if cancelled_order == "not_found":
+        raise HTTPException(status_code=404, detail="Order not found.")
+    if cancelled_order == "unauthorized":
+        raise HTTPException(status_code=403, detail="Not authorized to cancel this order.")
+    if cancelled_order == "not_cancellable":
+        raise HTTPException(status_code=400, detail="Order cannot be cancelled in its current state.")
+
+    return cancelled_order
+
+@router.patch("/orders/{order_id}", response_model=schemas.Order)
+async def update_order_endpoint(
+    order_id: uuid.UUID,
+    update_data: schemas.OrderUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_context: dict = Depends(security.get_current_user_context),
+    _ = Depends(security.require_permission("orders:update:own")),
+):
+    """
+    Allows a client to update their own order details.
+    """
+    updated_order = await service.update_order(db, order_id, update_data, user_context)
+    if updated_order == "not_found":
+        raise HTTPException(status_code=404, detail="Order not found.")
+    if updated_order == "unauthorized":
+        raise HTTPException(status_code=403, detail="Not authorized to update this order.")
+    if updated_order == "not_modifiable":
+        raise HTTPException(status_code=400, detail="Order cannot be modified in its current state.")
+
+    return updated_order

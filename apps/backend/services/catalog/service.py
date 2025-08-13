@@ -34,6 +34,51 @@ async def create_service_offering(
     await db.refresh(db_service)
     return db_service
 
+async def get_tariffs_for_supplier(db: AsyncSession, supplier_org_id: uuid.UUID, service_type: str):
+    """
+    Retrieves all tariffs for a given supplier and service type.
+    This is intended for internal, service-to-service communication.
+    """
+    result = await db.execute(
+        select(models.Tariff)
+        .join(models.ServiceOffering)
+        .where(
+            models.ServiceOffering.supplier_organization_id == supplier_org_id,
+            models.ServiceOffering.service_type == service_type,
+            models.ServiceOffering.is_active == True
+        )
+    )
+    return result.scalars().all()
+
+from decimal import Decimal
+
+async def update_supplier_ratings(db: AsyncSession, supplier_id: str, new_rating: int):
+    """
+    Updates the average rating for all service offerings of a supplier.
+    """
+    # Convert supplier_id string from event to UUID
+    supplier_uuid = uuid.UUID(supplier_id)
+
+    # Get all service offerings for the supplier
+    result = await db.execute(
+        select(models.ServiceOffering).where(models.ServiceOffering.supplier_organization_id == supplier_uuid)
+    )
+    offerings = result.scalars().all()
+
+    for offering in offerings:
+        old_avg = offering.rating_avg or Decimal(0)
+        old_count = offering.rating_count or 0
+
+        # Calculate new average
+        new_count = old_count + 1
+        new_avg = ((old_avg * old_count) + new_rating) / new_count
+
+        offering.rating_avg = new_avg
+        offering.rating_count = new_count
+
+    await db.commit()
+    return True
+
 async def list_service_offerings(db: AsyncSession, skip: int = 0, limit: int = 100):
     """
     Retrieves a list of active service offerings with pagination.

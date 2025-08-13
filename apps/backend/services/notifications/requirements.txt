@@ -1,0 +1,11 @@
+# Core Framework
+fastapi
+uvicorn[standard]
+
+# Messaging
+kafka-python
+
+# Utilities
+python-dotenv
+python-json-logger
+Jinja2

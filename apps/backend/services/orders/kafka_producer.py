@@ -23,3 +23,16 @@ def publish_order_completed(order_details: dict):
         print(f"Published event to {ORDER_COMPLETED_TOPIC}: {order_details}")
     except Exception as e:
         print(f"Error publishing to Kafka: {e}")
+
+REVIEW_CREATED_TOPIC = "review_created"
+
+def publish_review_created(review_details: dict):
+    """
+    Publishes a 'ReviewCreated' event to Kafka.
+    """
+    try:
+        producer.send(REVIEW_CREATED_TOPIC, value=review_details)
+        producer.flush()
+        print(f"Published event to {REVIEW_CREATED_TOPIC}: {review_details}")
+    except Exception as e:
+        print(f"Error publishing to Kafka: {e}")

@@ -52,6 +52,8 @@ async def pay_invoice(
 
     return updated_invoice
 
+from fastapi.responses import FileResponse
+
 @router.post("/payouts/{payout_id}/approve", response_model=schemas.Payout)
 async def approve_payout_endpoint(
     payout_id: uuid.UUID,
@@ -65,3 +67,28 @@ async def approve_payout_endpoint(
     if not approved_payout:
         raise HTTPException(status_code=404, detail="Payout not found or not in pending state.")
     return approved_payout
+
+@router.get("/invoices/{invoice_id}/pdf", response_class=FileResponse)
+async def get_invoice_pdf_endpoint(
+    invoice_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user_context: dict = Depends(security.get_current_user_context),
+):
+    """
+    Generates and returns a PDF for a specific invoice.
+    """
+    # Authorize and fetch the invoice
+    invoice = await service.get_invoice_for_user(db, invoice_id, user_context["org_id"])
+    if invoice is None:
+        raise HTTPException(status_code=404, detail="Invoice not found.")
+    if invoice == "unauthorized":
+        raise HTTPException(status_code=403, detail="Not authorized to view this invoice.")
+
+    # Generate the PDF
+    pdf_path = await service.generate_invoice_pdf(db, invoice)
+
+    return FileResponse(
+        path=pdf_path,
+        media_type='application/pdf',
+        filename=f"invoice-{invoice_id}.pdf"
+    )

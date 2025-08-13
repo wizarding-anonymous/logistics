@@ -24,16 +24,22 @@ async def get_or_create_thread_by_topic(db: AsyncSession, topic: str) -> models.
 
     return thread
 
-async def create_message(db: AsyncSession, topic: str, sender_id: uuid.UUID, content: str) -> models.Message:
+import json
+from typing import Dict, Any
+
+async def create_message(db: AsyncSession, topic: str, sender_id: uuid.UUID, content: Dict[str, Any]) -> models.Message:
     """
     Creates a new message and adds it to a chat thread.
+    The content is a dictionary that will be stored as a JSON string.
+    e.g., {"type": "text", "body": "Hello world"}
+    e.g., {"type": "file", "filename": "invoice.pdf", "url": "..."}
     """
     thread = await get_or_create_thread_by_topic(db, topic)
 
     message = models.Message(
         thread_id=thread.id,
         sender_id=sender_id,
-        content=content
+        content=json.dumps(content)  # Serialize dict to JSON string
     )
     db.add(message)
     await db.commit()

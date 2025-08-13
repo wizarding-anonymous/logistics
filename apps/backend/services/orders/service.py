@@ -59,9 +59,18 @@ async def get_order_by_id(db: AsyncSession, order_id: uuid.UUID):
     )
     return result.scalars().first()
 
-async def list_orders(db: AsyncSession, skip: int = 0, limit: int = 100):
+from sqlalchemy import or_
+
+async def list_orders_for_organization(db: AsyncSession, org_id: uuid.UUID, skip: int = 0, limit: int = 100):
+    """
+    Lists all orders where the given organization is either the client or the supplier.
+    This is a secure, multi-tenant query.
+    """
     result = await db.execute(
         select(models.Order)
+        .where(
+            or_(models.Order.client_id == org_id, models.Order.supplier_id == org_id)
+        )
         .order_by(models.Order.created_at.desc())
         .offset(skip)
         .limit(limit)
@@ -150,7 +159,78 @@ async def create_review_for_order(db: AsyncSession, order_id: uuid.UUID, review_
     await db.commit()
     await db.refresh(db_review)
 
-    # TODO: In a real app, publish a "review_created" event here
-    # so the catalog service can update the supplier's average rating.
+    # Publish event for catalog service to update rating
+    kafka_producer.publish_review_created(
+        {
+            "review_id": str(db_review.id),
+            "supplier_id": str(order.supplier_id),
+            "rating": db_review.rating,
+        }
+    )
 
     return db_review
+
+async def cancel_order_by_user(db: AsyncSession, order_id: uuid.UUID, user_context: dict):
+    """
+    Cancels an order. Only the client who created the order can cancel it,
+    and only if it's in a state that allows cancellation.
+    """
+    db_order = await get_order_by_id(db, order_id)
+    if not db_order:
+        return "not_found"
+
+    # Authorization Check: Only the client who created the order can cancel it.
+    if db_order.client_id != user_context["org_id"]:
+        return "unauthorized"
+
+    # Business Logic Check: Order can only be cancelled if it's not in a final state.
+    if db_order.status in [models.OrderStatus.DELIVERED, models.OrderStatus.POD_CONFIRMED, models.OrderStatus.CLOSED, models.OrderStatus.CANCELLED]:
+        return "not_cancellable"
+
+    db_order.status = models.OrderStatus.CANCELLED
+
+    db_status_history = models.StatusHistory(
+        order_id=db_order.id,
+        status=models.OrderStatus.CANCELLED,
+        notes="Order cancelled by client."
+    )
+    db.add(db_status_history)
+
+    await db.commit()
+    await db.refresh(db_order)
+
+    # TODO: Publish an 'order_cancelled' event if other services need to react.
+
+    return db_order
+
+async def update_order(db: AsyncSession, order_id: uuid.UUID, update_data: schemas.OrderUpdate, user_context: dict):
+    """
+    Updates an order's segments.
+    """
+    db_order = await get_order_by_id(db, order_id)
+    if not db_order:
+        return "not_found"
+
+    # Authorization Check: Only the client who created the order can modify it.
+    if db_order.client_id != user_context["org_id"]:
+        return "unauthorized"
+
+    # Business Logic Check: Order can only be modified if it's in an early state.
+    if db_order.status not in [models.OrderStatus.CREATED, models.OrderStatus.CONFIRMED]:
+        return "not_modifiable"
+
+    # Update segments if provided
+    if update_data.segments:
+        # Create a map of existing segments by their ID for easy lookup
+        existing_segments = {segment.id: segment for segment in db_order.segments}
+        for segment_update in update_data.segments:
+            if segment_update.id in existing_segments:
+                segment_to_update = existing_segments[segment_update.id]
+                if segment_update.origin_address:
+                    segment_to_update.origin_address = segment_update.origin_address
+                if segment_update.destination_address:
+                    segment_to_update.destination_address = segment_update.destination_address
+
+    await db.commit()
+    await db.refresh(db_order)
+    return db_order

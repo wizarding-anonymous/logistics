@@ -101,3 +101,106 @@ async def verify_recaptcha(token: str) -> bool:
         response.raise_for_status()
         result = response.json()
         return result.get("success", False)
+
+
+# =================================
+# RBAC (Role-Based Access Control)
+# =================================
+
+import yaml
+import uuid
+from functools import lru_cache
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from pydantic import BaseModel
+from typing import List, Dict, Set
+
+# Assume the rbac-matrix.yaml is at the root of the monorepo
+# Adjust path as necessary if the service runs from a different directory
+RBAC_FILE_PATH = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'rbac-matrix.yaml')
+
+
+@lru_cache()
+def get_rbac_matrix() -> Dict[str, Set[str]]:
+    """
+    Loads and parses the RBAC YAML file, converting it into a dictionary
+    mapping roles to a set of their permissions.
+    Using lru_cache makes this a singleton that only runs once.
+    """
+    try:
+        with open(RBAC_FILE_PATH, 'r') as f:
+            rbac_data = yaml.safe_load(f)
+    except FileNotFoundError:
+        # Handle case where file doesn't exist, maybe in a test environment
+        return {}
+
+    role_permissions = {}
+    permissions_map = {p['id']: p for p in rbac_data.get('permissions', [])}
+
+    for role in rbac_data.get('roles', []):
+        role_name = role['name']
+        # The 'admin' role gets all permissions implicitly
+        if role_name == 'admin':
+            role_permissions[role_name] = set(permissions_map.keys())
+            continue
+
+        permissions = set(role.get('permissions', []))
+        role_permissions[role_name] = permissions
+
+    return role_permissions
+
+
+class UserContext(BaseModel):
+    """Pydantic model to represent the user data extracted from the JWT."""
+    id: uuid.UUID
+    roles: List[str]
+    org_id: Optional[uuid.UUID] = None
+
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
+
+async def get_current_user_context(token: str = Depends(oauth2_scheme)) -> UserContext:
+    """
+    Generic dependency to decode JWT and return a UserContext.
+    This can be shared across services.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    payload = decode_token(token)
+    if payload is None:
+        raise credentials_exception
+
+    user_id_str = payload.get("sub")
+    if user_id_str is None:
+        raise credentials_exception
+
+    try:
+        user_id = uuid.UUID(user_id_str)
+        roles = payload.get("roles", [])
+        org_id_str = payload.get("org_id")
+        org_id = uuid.UUID(org_id_str) if org_id_str else None
+        return UserContext(id=user_id, roles=roles, org_id=org_id)
+    except (ValueError, TypeError):
+        raise credentials_exception
+
+
+def require_permission(permission: str):
+    """
+    This is a dependency factory. It creates a dependency that will
+    check if the current user has the required permission.
+    """
+    def permission_checker(user_context: UserContext = Depends(get_current_user_context)):
+        rbac_matrix = get_rbac_matrix()
+        user_permissions: Set[str] = set()
+        for role in user_context.roles:
+            user_permissions.update(rbac_matrix.get(role, set()))
+
+        if permission not in user_permissions:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permission '{permission}' required.",
+            )
+    return permission_checker

@@ -14,10 +14,11 @@ class KYCStatus(str, enum.Enum):
 
 class User(Base):
     __tablename__ = "users"
-    # Define only the columns needed by the admin service to read data
+    # Define columns needed by the admin service to read and write data
     id = Column(UUID(as_uuid=True), primary_key=True)
     email = Column(String, unique=True, index=True, nullable=False)
     roles = Column(ARRAY(String), nullable=False, default=['client'])
+    is_active = Column(Boolean, default=True)
     kyc_documents = relationship("KYCDocument", back_populates="user")
 
 class KYCDocument(Base):
@@ -29,3 +30,9 @@ class KYCDocument(Base):
     status = Column(SAEnum(KYCStatus), nullable=False, default=KYCStatus.PENDING)
     rejection_reason = Column(String, nullable=True)
     user = relationship("User", back_populates="kyc_documents")
+
+class Organization(Base):
+    __tablename__ = "organizations"
+    id = Column(UUID(as_uuid=True), primary_key=True)
+    name = Column(String, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)

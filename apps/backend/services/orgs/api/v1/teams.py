@@ -40,65 +40,65 @@ async def list_teams_in_organization_endpoint(
     """
     return await service.get_teams_by_organization(db=db, org_id=org_id)
 
-@router.get("/teams/{team_id}", response_model=schemas.Team)
-async def get_team_endpoint(
+async def get_team_and_verify_access(
     team_id: uuid.UUID,
+    user_context: dict = Depends(get_current_user_context),
     db: AsyncSession = Depends(get_db),
-    # TODO: Add authz check to ensure user is part of the team's organization
-):
-    """
-    Get details for a specific team.
-    """
+    required_roles: List[str] = ["owner", "admin", "member"],
+) -> models.Team:
+    """Dependency that gets a team and verifies the user has access to its organization."""
     db_team = await service.get_team(db, team_id=team_id)
     if db_team is None:
         raise HTTPException(status_code=404, detail="Team not found")
+
+    # Now, check if the user is part of the organization that owns the team
+    org_id = db_team.organization_id
+    role_checker = require_organization_role(required_roles)
+    await role_checker(org_id=org_id, user_context=user_context, db=db)
+
+    return db_team
+
+@router.get("/teams/{team_id}", response_model=schemas.Team)
+async def get_team_endpoint(
+    db_team: models.Team = Depends(get_team_and_verify_access)
+):
+    """Get details for a specific team. User must be a member of the parent org."""
     return db_team
 
 @router.put("/teams/{team_id}", response_model=schemas.Team)
 async def update_team_endpoint(
-    team_id: uuid.UUID,
     team_in: schemas.TeamUpdate,
+    db_team: models.Team = Depends(lambda team_id, db, user_context: get_team_and_verify_access(team_id, user_context, db, required_roles=["owner", "admin"])),
     db: AsyncSession = Depends(get_db),
-    # TODO: Add authz check
 ):
-    """
-    Update a team's details.
-    """
-    return await service.update_team(db=db, team_id=team_id, team_in=team_in)
+    """Update a team's details. Must be an org admin or owner."""
+    return await service.update_team(db=db, team_id=db_team.id, team_in=team_in)
 
 @router.delete("/teams/{team_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_team_endpoint(
-    team_id: uuid.UUID,
+    db_team: models.Team = Depends(lambda team_id, db, user_context: get_team_and_verify_access(team_id, user_context, db, required_roles=["owner", "admin"])),
     db: AsyncSession = Depends(get_db),
-    # TODO: Add authz check
 ):
-    """
-    Delete a team.
-    """
-    await service.delete_team(db=db, team_id=team_id)
+    """Delete a team. Must be an org admin or owner."""
+    await service.delete_team(db=db, team_id=db_team.id)
     return
 
 @router.post("/teams/{team_id}/members/{user_id}", status_code=status.HTTP_201_CREATED)
 async def add_team_member_endpoint(
-    team_id: uuid.UUID,
     user_id: uuid.UUID,
+    db_team: models.Team = Depends(lambda team_id, db, user_context: get_team_and_verify_access(team_id, user_context, db, required_roles=["owner", "admin"])),
     db: AsyncSession = Depends(get_db),
-    # TODO: Add authz check
 ):
-    """
-    Add a user to a team.
-    """
-    # TODO: Check if user is part of the organization first
-    return await service.add_user_to_team(db=db, team_id=team_id, user_id=user_id)
+    """Add a user to a team. Must be an org admin or owner."""
+    # TODO: Check if user_id being added is part of the organization first.
+    # This would require another service call or DB query.
+    return await service.add_user_to_team(db=db, team_id=db_team.id, user_id=user_id)
 
 @router.delete("/teams/{team_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_team_member_endpoint(
-    team_id: uuid.UUID,
     user_id: uuid.UUID,
+    db_team: models.Team = Depends(lambda team_id, db, user_context: get_team_and_verify_access(team_id, user_context, db, required_roles=["owner", "admin"])),
     db: AsyncSession = Depends(get_db),
-    # TODO: Add authz check
 ):
-    """
-    Remove a user from a team.
-    """
-    return await service.remove_user_from_team(db=db, team_id=team_id, user_id=user_id)
+    """Remove a user from a team. Must be an org admin or owner."""
+    return await service.remove_user_from_team(db=db, team_id=db_team.id, user_id=user_id)

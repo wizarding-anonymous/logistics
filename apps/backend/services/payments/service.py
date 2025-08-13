@@ -115,6 +115,9 @@ async def mark_invoice_as_paid(db: AsyncSession, invoice_id: uuid.UUID, org_id: 
     await db.refresh(invoice)
     return invoice
 
+from . import pdf_generator
+import os
+
 async def approve_payout(db: AsyncSession, payout_id: uuid.UUID):
     """
     Approves a pending payout, marking it as completed and creating the transaction.
@@ -137,3 +140,35 @@ async def approve_payout(db: AsyncSession, payout_id: uuid.UUID):
     await db.commit()
     await db.refresh(payout)
     return payout
+
+async def get_invoice_for_user(db: AsyncSession, invoice_id: uuid.UUID, user_org_id: uuid.UUID):
+    """
+    Gets a single invoice and verifies the user is authorized to view it.
+    """
+    invoice = await db.get(models.Invoice, invoice_id)
+    if not invoice:
+        return None
+
+    # Simple authz check for now. In a real app, a supplier might also need access.
+    if invoice.organization_id != user_org_id:
+        return "unauthorized"
+
+    return invoice
+
+async def generate_invoice_pdf(db: AsyncSession, invoice: models.Invoice):
+    """
+    Generates a PDF for a given invoice object and returns the file path.
+    """
+    context = {"invoice": invoice}
+
+    # Create a temporary directory for generated PDFs
+    output_dir = "/tmp/invoices"
+    output_path = os.path.join(output_dir, f"invoice-{invoice.id}.pdf")
+
+    pdf_generator.create_pdf_from_template(
+        template_name="invoice.html",
+        context=context,
+        output_path=output_path
+    )
+
+    return output_path
