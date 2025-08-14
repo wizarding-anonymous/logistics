@@ -62,11 +62,28 @@ class KYCDocument(Base):
 
     document_type = Column(String, nullable=False) # e.g., 'passport', 'inn', 'ogrn'
     file_storage_key = Column(String, nullable=False) # Key to the file in MinIO/S3
+    file_name = Column(String, nullable=False) # Original filename
+    file_size = Column(Integer, nullable=False) # File size in bytes
+    file_hash = Column(String, nullable=False) # SHA256 hash for integrity
+    mime_type = Column(String, nullable=True) # MIME type of the file
+    
     status = Column(SAEnum(KYCStatus), nullable=False, default=KYCStatus.PENDING)
     rejection_reason = Column(String, nullable=True)
+    
+    # Validation results
+    virus_scan_status = Column(String, default='pending') # 'pending', 'clean', 'infected'
+    validation_status = Column(String, default='pending') # 'pending', 'valid', 'invalid'
+    validation_errors = Column(Text, nullable=True) # JSON string of validation errors
+    
+    # INN/OGRN specific validation
+    inn_validation_status = Column(String, nullable=True) # 'valid', 'invalid', 'not_found'
+    ogrn_validation_status = Column(String, nullable=True) # 'valid', 'invalid', 'not_found'
+    extracted_inn = Column(String, nullable=True) # Extracted INN from document
+    extracted_ogrn = Column(String, nullable=True) # Extracted OGRN from document
 
     uploaded_at = Column(DateTime, server_default=func.now(), nullable=False)
     reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(UUID(as_uuid=True), nullable=True) # Admin user who reviewed
 
     user = relationship("User", back_populates="kyc_documents")
 

@@ -1,4 +1,5 @@
 import logging
+import uuid
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
@@ -10,6 +11,7 @@ from ...database import get_db
 
 router = APIRouter()
 audit_logger = logging.getLogger('audit')
+logger = logging.getLogger(__name__)
 
 # This tells FastAPI where to get the token from
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
@@ -171,6 +173,49 @@ async def read_users_me(current_user: models.User = Depends(get_current_user)):
 # KYC Routes
 # =================================
 
+@router.post("/users/me/kyc-documents/upload-url", response_model=dict)
+async def get_kyc_upload_url(
+    upload_request: schemas.KYCDocumentUploadRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get a presigned URL for uploading a KYC document.
+    """
+    if "supplier" not in current_user.roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only users with the 'supplier' role can submit KYC documents."
+        )
+    
+    from ...s3_client import s3_client
+    
+    # Generate unique file key
+    file_key = s3_client.generate_file_key(
+        str(current_user.id), 
+        upload_request.document_type, 
+        upload_request.file_name
+    )
+    
+    # Generate presigned URL for upload
+    upload_url = s3_client.generate_presigned_url(
+        file_key, 
+        expiration=3600,  # 1 hour
+        http_method='PUT'
+    )
+    
+    if not upload_url:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate upload URL"
+        )
+    
+    return {
+        "upload_url": upload_url,
+        "file_key": file_key,
+        "expires_in": 3600
+    }
+
 @router.post("/users/me/kyc-documents", response_model=schemas.KYCDocument, status_code=status.HTTP_201_CREATED)
 async def submit_kyc_document(
     doc_in: schemas.KYCDocumentCreate,
@@ -178,17 +223,58 @@ async def submit_kyc_document(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Submit a KYC document for the current user.
-    NOTE: This endpoint only creates the DB record. The actual file upload
-    to S3/MinIO should be handled separately by the client, which then
-    passes the `file_storage_key` to this endpoint.
+    Submit a KYC document after uploading the file.
+    This creates the database record and triggers validation.
     """
     if "supplier" not in current_user.roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only users with the 'supplier' role can submit KYC documents."
         )
-    return await service.create_kyc_document(db=db, user_id=current_user.id, doc_in=doc_in)
+    
+    try:
+        # Create the document record
+        document = await service.create_kyc_document(db=db, user_id=current_user.id, doc_in=doc_in)
+        
+        # Trigger async validation
+        from ...file_validator import FileValidator
+        from ...s3_client import s3_client
+        import asyncio
+        
+        async def validate_document():
+            try:
+                # Download file for validation
+                file_content, error = await s3_client.download_file(doc_in.file_storage_key)
+                if error:
+                    logger.error(f"Failed to download file for validation: {error}")
+                    return
+                
+                # Validate the document
+                validation_results = await FileValidator.validate_document(
+                    file_content, doc_in.file_name, doc_in.document_type
+                )
+                
+                # Update document with validation results
+                await service.process_kyc_document_validation(db, document.id, validation_results)
+                
+                # Send notification if validation failed
+                if validation_results.get('validation_errors'):
+                    # TODO: Send notification to user about validation failure
+                    pass
+                
+            except Exception as e:
+                logger.error(f"Error during document validation: {e}")
+        
+        # Start validation in background
+        asyncio.create_task(validate_document())
+        
+        return document
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
 
 @router.get("/users/me/kyc-documents", response_model=List[schemas.KYCDocument])
 async def list_my_kyc_documents(
@@ -199,6 +285,52 @@ async def list_my_kyc_documents(
     List all KYC documents for the currently authenticated user.
     """
     return await service.get_kyc_documents_by_user(db=db, user_id=current_user.id)
+
+@router.get("/users/me/kyc-status", response_model=dict)
+async def get_my_kyc_status(
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get overall KYC status for the current user.
+    """
+    return await service.get_user_kyc_status(db=db, user_id=current_user.id)
+
+@router.get("/users/me/kyc-documents/{doc_id}/download-url", response_model=dict)
+async def get_kyc_download_url(
+    doc_id: uuid.UUID,
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get a presigned URL for downloading a KYC document.
+    """
+    document = await service.get_kyc_document_by_id(db, doc_id)
+    if not document or document.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+    
+    from ...s3_client import s3_client
+    
+    download_url = s3_client.generate_presigned_url(
+        document.file_storage_key,
+        expiration=3600,  # 1 hour
+        http_method='GET'
+    )
+    
+    if not download_url:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate download URL"
+        )
+    
+    return {
+        "download_url": download_url,
+        "file_name": document.file_name,
+        "expires_in": 3600
+    }
 
 
 # =================================

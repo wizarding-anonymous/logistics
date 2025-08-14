@@ -1,6 +1,6 @@
 import uuid
 import enum
-from sqlalchemy import Column, String, DateTime, func, Boolean, Enum as SAEnum, ForeignKey
+from sqlalchemy import Column, String, DateTime, func, Boolean, Enum as SAEnum, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.orm import relationship, declarative_base
 
@@ -27,8 +27,22 @@ class KYCDocument(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     document_type = Column(String, nullable=False)
     file_storage_key = Column(String, nullable=False)
+    file_name = Column(String, nullable=False)
+    file_size = Column(Integer, nullable=False)
+    file_hash = Column(String, nullable=False)
+    mime_type = Column(String, nullable=True)
     status = Column(SAEnum(KYCStatus), nullable=False, default=KYCStatus.PENDING)
     rejection_reason = Column(String, nullable=True)
+    virus_scan_status = Column(String, default='pending')
+    validation_status = Column(String, default='pending')
+    validation_errors = Column(String, nullable=True)
+    inn_validation_status = Column(String, nullable=True)
+    ogrn_validation_status = Column(String, nullable=True)
+    extracted_inn = Column(String, nullable=True)
+    extracted_ogrn = Column(String, nullable=True)
+    uploaded_at = Column(DateTime, server_default=func.now(), nullable=False)
+    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(UUID(as_uuid=True), nullable=True)
     user = relationship("User", back_populates="kyc_documents")
 
 class Organization(Base):

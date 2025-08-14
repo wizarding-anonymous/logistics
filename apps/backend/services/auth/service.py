@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -104,16 +104,126 @@ async def create_kyc_document(db: AsyncSession, user_id: uuid.UUID, doc_in: sche
     """
     Creates a new KYC document record for a user.
     """
-    # TODO: Add logic to prevent too many pending documents.
+    # Check if user already has a pending document of this type
+    existing_doc = await db.execute(
+        select(models.KYCDocument).where(
+            models.KYCDocument.user_id == user_id,
+            models.KYCDocument.document_type == doc_in.document_type,
+            models.KYCDocument.status == models.KYCStatus.PENDING
+        )
+    )
+    if existing_doc.scalars().first():
+        raise ValueError(f"User already has a pending {doc_in.document_type} document")
+    
     db_doc = models.KYCDocument(
         user_id=user_id,
         document_type=doc_in.document_type,
-        file_storage_key=doc_in.file_storage_key
+        file_storage_key=doc_in.file_storage_key,
+        file_name=doc_in.file_name,
+        file_size=doc_in.file_size,
+        file_hash=doc_in.file_hash
     )
     db.add(db_doc)
     await db.commit()
     await db.refresh(db_doc)
     return db_doc
+
+async def process_kyc_document_validation(db: AsyncSession, doc_id: uuid.UUID, validation_results: dict):
+    """
+    Update KYC document with validation results
+    """
+    doc = await db.get(models.KYCDocument, doc_id)
+    if not doc:
+        return None
+    
+    doc.mime_type = validation_results.get('mime_type')
+    doc.virus_scan_status = validation_results.get('virus_scan_status', 'pending')
+    doc.validation_errors = str(validation_results.get('validation_errors', []))
+    doc.inn_validation_status = validation_results.get('inn_validation_status')
+    doc.ogrn_validation_status = validation_results.get('ogrn_validation_status')
+    doc.extracted_inn = validation_results.get('extracted_inn')
+    doc.extracted_ogrn = validation_results.get('extracted_ogrn')
+    
+    # Determine overall validation status
+    if validation_results.get('validation_errors'):
+        doc.validation_status = 'invalid'
+    elif doc.virus_scan_status == 'clean':
+        doc.validation_status = 'valid'
+    else:
+        doc.validation_status = 'pending'
+    
+    await db.commit()
+    await db.refresh(doc)
+    return doc
+
+async def get_kyc_document_by_id(db: AsyncSession, doc_id: uuid.UUID):
+    """
+    Get KYC document by ID
+    """
+    result = await db.execute(select(models.KYCDocument).where(models.KYCDocument.id == doc_id))
+    return result.scalars().first()
+
+async def update_kyc_document_status(
+    db: AsyncSession, 
+    doc_id: uuid.UUID, 
+    status: models.KYCStatus, 
+    rejection_reason: str = None,
+    reviewed_by: uuid.UUID = None
+):
+    """
+    Update KYC document status (for admin use)
+    """
+    doc = await db.get(models.KYCDocument, doc_id)
+    if not doc:
+        return None
+    
+    doc.status = status
+    doc.rejection_reason = rejection_reason
+    doc.reviewed_at = datetime.utcnow()
+    doc.reviewed_by = reviewed_by
+    
+    await db.commit()
+    await db.refresh(doc)
+    return doc
+
+async def get_user_kyc_status(db: AsyncSession, user_id: uuid.UUID):
+    """
+    Get overall KYC status for a user
+    """
+    documents = await get_kyc_documents_by_user(db, user_id)
+    
+    if not documents:
+        return {
+            'status': 'not_started',
+            'required_documents': ['inn', 'ogrn', 'business_license'],
+            'submitted_documents': [],
+            'approved_documents': [],
+            'rejected_documents': []
+        }
+    
+    submitted = [doc.document_type for doc in documents]
+    approved = [doc.document_type for doc in documents if doc.status == models.KYCStatus.APPROVED]
+    rejected = [doc.document_type for doc in documents if doc.status == models.KYCStatus.REJECTED]
+    
+    required_docs = ['inn', 'ogrn', 'business_license']
+    all_required_approved = all(doc_type in approved for doc_type in required_docs)
+    
+    if all_required_approved:
+        status = 'approved'
+    elif any(doc_type in rejected for doc_type in required_docs):
+        status = 'rejected'
+    elif any(doc_type in submitted for doc_type in required_docs):
+        status = 'pending'
+    else:
+        status = 'not_started'
+    
+    return {
+        'status': status,
+        'required_documents': required_docs,
+        'submitted_documents': submitted,
+        'approved_documents': approved,
+        'rejected_documents': rejected
+    }
 
 async def get_kyc_documents_by_user(db: AsyncSession, user_id: uuid.UUID):
     """

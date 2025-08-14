@@ -1,9 +1,17 @@
 from fastapi import FastAPI
-from .api.v1 import auth
-from .database import Base, engine
-from .logging_config import setup_logging
-from .rate_limiter import RateLimiterMiddleware
-from .redis_client import redis_client
+try:
+    from .api.v1 import auth
+    from .database import Base, engine
+    from .logging_config import setup_logging
+    from .rate_limiter import RateLimiterMiddleware
+    from .redis_client import redis_client
+except ImportError:
+    # Fallback for standalone execution
+    from api.v1 import auth
+    from database import Base, engine
+    from logging_config import setup_logging
+    from rate_limiter import RateLimiterMiddleware
+    from redis_client import redis_client
 
 async def create_tables():
     async with engine.begin() as conn:

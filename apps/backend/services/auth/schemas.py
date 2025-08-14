@@ -1,7 +1,7 @@
 import uuid
 import re
 from pydantic import BaseModel, EmailStr, validator, constr
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 # =================================
 # User Schemas
@@ -47,14 +47,54 @@ class KYCDocumentBase(BaseModel):
     file_storage_key: str
 
 class KYCDocumentCreate(KYCDocumentBase):
-    pass
+    file_name: str
+    file_size: int
+    file_hash: str
+    
+    @validator('document_type')
+    def validate_document_type(cls, v):
+        allowed_types = {'inn', 'ogrn', 'passport', 'business_license', 'insurance_certificate', 'bank_details'}
+        if v not in allowed_types:
+            raise ValueError(f"Invalid document type. Allowed types: {', '.join(allowed_types)}")
+        return v
+    
+    @validator('file_size')
+    def validate_file_size(cls, v):
+        max_size = 10 * 1024 * 1024  # 10MB
+        if v > max_size:
+            raise ValueError(f"File size too large. Maximum allowed: {max_size} bytes")
+        return v
+
+class KYCDocumentUploadRequest(BaseModel):
+    document_type: str
+    file_name: str
+    
+    @validator('document_type')
+    def validate_document_type(cls, v):
+        allowed_types = {'inn', 'ogrn', 'passport', 'business_license', 'insurance_certificate', 'bank_details'}
+        if v not in allowed_types:
+            raise ValueError(f"Invalid document type. Allowed types: {', '.join(allowed_types)}")
+        return v
 
 class KYCDocument(KYCDocumentBase):
     id: uuid.UUID
     user_id: uuid.UUID
+    file_name: str
+    file_size: int
+    file_hash: str
+    mime_type: Optional[str] = None
     status: str # Should match KYCStatus enum
     rejection_reason: Optional[str] = None
+    virus_scan_status: str = 'pending'
+    validation_status: str = 'pending'
+    validation_errors: Optional[str] = None
+    inn_validation_status: Optional[str] = None
+    ogrn_validation_status: Optional[str] = None
+    extracted_inn: Optional[str] = None
+    extracted_ogrn: Optional[str] = None
     uploaded_at: str
+    reviewed_at: Optional[str] = None
+    reviewed_by: Optional[uuid.UUID] = None
 
     class Config:
         orm_mode = True

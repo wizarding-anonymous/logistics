@@ -26,3 +26,8 @@ PyYAML
 # Redis for caching and rate limiting
 redis[hiredis]
 aioredis
+
+# File processing and validation
+python-magic
+boto3
+aiohttp

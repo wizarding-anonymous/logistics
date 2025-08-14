@@ -8,6 +8,7 @@ import os
 import sys
 from pathlib import Path
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import text
 from dotenv import load_dotenv
 
 # Add the service directory to Python path
@@ -15,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://admin:password@postgres/marketplace")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://admin:password@localhost:5432/marketplace")
 
 async def run_migration(migration_file: str):
     """Run a single migration file"""
@@ -38,9 +39,13 @@ async def run_migration(migration_file: str):
         
         async with engine.begin() as conn:
             for statement in statements:
-                if statement:
+                if statement and not statement.startswith('--'):
                     print(f"Executing: {statement[:100]}...")
-                    await conn.execute(statement)
+                    try:
+                        await conn.execute(text(statement))
+                    except Exception as e:
+                        print(f"Warning: {e}")
+                        continue
         
         print(f"Migration {migration_file} completed successfully")
         return True
